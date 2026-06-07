@@ -158,11 +158,14 @@ function applyAuthConfig(data) {
 }
 
 function syncDevTools() {
-  autoplayBtn.hidden = !devMode || !jurisdictionCtrl.autoplayAllowed;
-  newSessionBtn.hidden = !devMode;
-  if (devMode && complianceDevEl) {
-    complianceDevEl.hidden = false;
-    complianceDevEl.textContent = `Compliance dev · ${getDevComplianceLabel()}`;
+  if (replayMode) return;
+  autoplayBtn.hidden = !jurisdictionCtrl.autoplayAllowed;
+  newSessionBtn.hidden = false;
+  if (complianceDevEl) {
+    complianceDevEl.hidden = !devMode;
+    if (devMode) {
+      complianceDevEl.textContent = `Compliance dev · ${getDevComplianceLabel()}`;
+    }
   }
 }
 

@@ -4,6 +4,11 @@
   box-sizing: border-box;
 }
 
+/* Class display rules must not override the HTML hidden attribute. */
+[hidden] {
+  display: none !important;
+}
+
 :root {
   color-scheme: dark;
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -199,7 +204,7 @@ h1 {
 }
 
 .replay-banner {
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
@@ -209,10 +214,6 @@ h1 {
   border: 1px solid #3d2a14;
   background: #1a1208;
   font-size: 0.78rem;
-}
-
-.replay-banner:not([hidden]) {
-  display: flex;
 }
 
 .replay-label {
