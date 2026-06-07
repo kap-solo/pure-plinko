@@ -4,14 +4,20 @@ Minimal high-volatility Plinko prototype — lottery-ticket logic, no story wrap
 
 ## Run locally
 
-Double-click `start.bat` or:
+Double-click `start.bat` (starts Node mock RGS + opens the browser) or:
 
 ```bat
 cd C:\Vibecoding_GH\Pure-Plinko
-python -m http.server 5174
+npm install
+npm start
 ```
 
-Open **http://127.0.0.1:5174/**
+| URL | Mode |
+|-----|------|
+| `http://127.0.0.1:5174/?dev=true` | Local dev — mock RGS, test buttons (100 play, new session) |
+| `http://127.0.0.1:5174/` | Hosted demo — playable mock RGS, no dev UI |
+
+**Suki Engine** is pinned in `package.json` to a specific commit (`dbc79c8`, …). After bumping the hash, run `npm install` and `npm run test:smoke`.
 
 ## What “pure” means (v0)
 

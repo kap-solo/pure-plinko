@@ -3,6 +3,6 @@ services:
     name: pure-plinko
     runtime: node
     plan: free
-    buildCommand: npm install
+    buildCommand: git config --global url."https://github.com/".insteadOf "git@github.com:" && npm ci
     startCommand: npm start
     healthCheckPath: /
