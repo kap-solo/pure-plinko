@@ -8,8 +8,12 @@ import {
   authenticate,
   buildReplayUrl,
   classifyRgsError,
+  createAudioPrefs,
   createBetUi,
   createGameBootstrap,
+  createGameMenu,
+  createModalHost,
+  createRecentResultsStore,
   getReplayParams,
   getSessionID,
   isReplayMode,
@@ -18,6 +22,7 @@ import {
   startNewRgsSession,
 } from '@kap-solo/suki-engine/client/rgs.js';
 import { BET_OPTIONS, DEFAULT_BET, GAME, PAYTABLE, TIMING } from './config.js';
+import { registerPlinkoModals } from './menu.js';
 import { buildPlinkoSettledResult, parsePlinkoDrop } from './plinko/round.js';
 import { ensureSession, loadSession, recordPlay, resetSession, saveSession, sessionAvgReturnPercent } from './session.js';
 import { formatMult } from './math.js';
@@ -37,6 +42,18 @@ const complianceDevEl = document.getElementById('compliance-dev');
 const sessionTimerStat = document.getElementById('session-timer-stat');
 const sessionTimerEl = document.getElementById('session-timer');
 const principlesAside = document.querySelector('.principles');
+
+const shellEl = document.querySelector('.suki-stake-shell');
+const brandEl = document.querySelector('.suki-brand');
+const modalHost = createModalHost({ root: shellEl });
+const audioPrefs = createAudioPrefs({ storageKey: 'pure-plinko.audio' });
+const recentResults = createRecentResultsStore({ max: 25 });
+const gameMenu = createGameMenu({
+  brand: brandEl,
+  shell: shellEl,
+  modalHost,
+  audioPrefs,
+});
 
 const betUi = createBetUi({
   root: document.getElementById('bet-ui-root'),
@@ -98,7 +115,7 @@ const game = createGameBootstrap({
       replayNote: replayNoteEl,
       dropButton: betUi.elements.dropButton,
     },
-    screenPreview: { root: document.querySelector('.suki-stake-shell') },
+    screenPreview: { root: shellEl },
   },
   lifecycle: {
     handlers: {
@@ -147,6 +164,14 @@ const game = createGameBootstrap({
       betUi.setLastReplayUrl(lastReplayUrl);
       syncControls();
 
+      recentResults.push({
+        data: {
+          bucket: result.bucket,
+          multiplier: result.multiplier,
+          payout,
+        },
+      });
+
       displayRoundResult({
         bucket: result.bucket,
         multiplier: result.multiplier,
@@ -186,6 +211,7 @@ const game = createGameBootstrap({
     onAuthRound: handleAuthRoundOutcome,
   },
   onJurisdictionChange: () => {
+    gameMenu.refresh();
     syncControls();
     syncHud();
   },
@@ -193,6 +219,15 @@ const game = createGameBootstrap({
 });
 
 const { controls, lifecycle, applyAuthConfig, syncDevTools } = game;
+
+gameMenu.bind({ game });
+registerPlinkoModals({
+  modalHost,
+  recentResults,
+  game,
+  formatCurrency: (amount) => game.formatCurrency(amount),
+  getSession: () => session,
+});
 
 betUi.bind({
   game,
@@ -211,6 +246,10 @@ betUi.bind({
   getAutoplaying: () => autoplaying,
   getPlayLabel: () => copyTerm('drop'),
   onBetChange: syncHud,
+  onDismissOverlays: () => {
+    gameMenu.close();
+    modalHost.close();
+  },
   onPlay: onDrop,
   onTurbo: () => {
     animationSpeed = 3;
