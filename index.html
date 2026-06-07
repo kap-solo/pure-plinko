@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pure Plinko — prototype</title>
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <header>
+        <h1>Pure Plinko</h1>
+        <p class="subtitle">Working title · one drop, one result</p>
+      </header>
+
+      <section class="hud" aria-label="Balance">
+        <div class="stat">
+          <span class="label">Balance</span>
+          <span class="value" id="balance">$0.00</span>
+        </div>
+        <div class="stat">
+          <span class="label">Bet</span>
+          <span class="value" id="bet-display">$1.00</span>
+        </div>
+        <div class="stat" style="grid-column: 1 / -1">
+          <span class="label">Last result</span>
+          <span class="value" id="last-result">—</span>
+        </div>
+      </section>
+
+      <section class="hud session" id="session-panel" hidden aria-label="Session">
+        <div class="stat">
+          <span class="label">Session plays</span>
+          <span class="value" id="session-plays">0</span>
+        </div>
+        <div class="stat">
+          <span class="label">Session P/L</span>
+          <span class="value" id="session-pl">$0.00</span>
+        </div>
+        <div class="stat">
+          <span class="label">Best win</span>
+          <span class="value" id="session-best">—</span>
+        </div>
+        <div class="stat">
+          <span class="label">Avg return</span>
+          <span class="value" id="session-avg-return">—</span>
+        </div>
+      </section>
+
+      <div class="stage">
+        <canvas id="board" width="480" height="552" aria-label="Plinko board"></canvas>
+      </div>
+
+      <p class="message" id="message">Set bet · press Drop.</p>
+
+      <div class="controls">
+        <div class="bet-row" id="bet-chips" aria-label="Bet amount"></div>
+        <button id="drop-btn" type="button">Drop</button>
+        <div class="test-row">
+          <button id="autoplay-btn" type="button" class="test-btn">100 play</button>
+          <button id="new-session-btn" type="button" class="test-btn">New session</button>
+        </div>
+      </div>
+
+      <p class="stats" id="stats"></p>
+
+      <aside class="principles">
+        <strong>What “pure” means here</strong>
+        <ul>
+          <li>One action: <strong>Drop</strong> — no risk sliders, no row picker.</li>
+          <li>Paytable always visible under the board.</li>
+          <li>Outcome is chosen first; the ball path is performance only (Stake-shaped).</li>
+          <li>Stepped pay ladder: 120,000× → 2,000× → … → 0.1× centre (weights TBD in math-sdk).</li>
+        </ul>
+      </aside>
+    </main>
+
+    <script type="module" src="js/game.js"></script>
+  </body>
+</html>
