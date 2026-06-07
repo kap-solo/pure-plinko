@@ -40,6 +40,8 @@ const replayAgainBtn = document.getElementById('replay-again-btn');
 const balanceHud = document.getElementById('balance-hud');
 const statsEl = document.getElementById('stats');
 const complianceDevEl = document.getElementById('compliance-dev');
+const sessionTimerStat = document.getElementById('session-timer-stat');
+const sessionTimerEl = document.getElementById('session-timer');
 const principlesAside = document.querySelector('.principles');
 const testControlsRow = document.querySelector('.test-row');
 
@@ -84,6 +86,8 @@ const game = createGameBootstrap({
       autoplay: autoplayBtn,
       newSession: newSessionBtn,
       devAside: principlesAside,
+      sessionTimer: sessionTimerEl,
+      sessionTimerContainer: sessionTimerStat,
     },
   },
   lifecycle: {
@@ -461,6 +465,7 @@ async function onNewSession() {
   newSessionBtn.disabled = true;
   try {
     startNewRgsSession();
+    game.sessionTimer?.reset();
     session = resetSession();
     resultEl.textContent = '—';
     lastReplayUrl = '';

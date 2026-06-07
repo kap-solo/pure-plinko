@@ -76,6 +76,10 @@ h1 {
   padding: 0.55rem 0.75rem;
 }
 
+.value.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
 .stat .label {
   display: block;
   font-size: 0.7rem;
