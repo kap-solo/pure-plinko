@@ -3,6 +3,6 @@ services:
     name: pure-plinko
     runtime: node
     plan: free
-    buildCommand: ""
+    buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /

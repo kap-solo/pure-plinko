@@ -3,7 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "test:smoke": "node node_modules/@kap-solo/suki-engine/harness/smoke.mjs",
+    "test:integration": "node scripts/integration-smoke.mjs"
+  },
+  "dependencies": {
+    "@kap-solo/suki-engine": "github:kap-solo/suki-engine#main"
   },
   "engines": {
     "node": ">=20"

@@ -1,29 +1,39 @@
 /**
  * Pure Plinko — game presentation layer.
- * Stake compliance (RGS lifecycle, jurisdiction, errors) lives in js/stake/*.
+ * Stake compliance runs on Suki Engine (@kap-solo/suki-engine).
  */
 
-import { BET_OPTIONS, DEFAULT_BET, GAME, PAYTABLE, TIMING } from './config.js';
-import { apiToDisplay, displayToApi } from './money.js';
+import { initSuki } from '@kap-solo/suki-engine/client/suki/config.js';
+import { apiToDisplay, displayToApi } from '@kap-solo/suki-engine/client/money.js';
 import {
   authenticate,
   buildReplayUrl,
+  classifyRgsError,
   getReplayParams,
   getSessionID,
   isReplayMode,
   messageForRgsCode,
-  parsePlinkoDrop,
   requestReplay,
+  showDevTools,
   startNewRgsSession,
-} from './rgs.js';
+  getDevComplianceLabel,
+  getJurisdictionProfileName,
+} from '@kap-solo/suki-engine/client/rgs.js';
+import { createJurisdictionController } from '@kap-solo/suki-engine/client/suki/jurisdiction.js';
+import { createSukiLifecycle } from '@kap-solo/suki-engine/client/suki/lifecycle.js';
+import { bootstrapPlayMode, attachBalanceRefresh } from '@kap-solo/suki-engine/client/suki/bootstrap.js';
+import { BET_OPTIONS, DEFAULT_BET, GAME, PAYTABLE, TIMING } from './config.js';
+import { buildPlinkoSettledResult, parsePlinkoDrop } from './plinko/round.js';
 import { ensureSession, loadSession, recordPlay, resetSession, saveSession, sessionAvgReturnPercent } from './session.js';
 import { formatMoney, formatMult } from './math.js';
 import { ballRadii, bounceRisePx, rowDurationMs, sampleRowMotion } from './physics.js';
 import { bucketCenterX, createBoardLayout, drawBall, drawBoard } from './render.js';
-import { isDevMode as devFlag, getDevComplianceLabel, getJurisdictionProfileName } from './stake/config.js';
-import { createJurisdictionController } from './stake/jurisdiction.js';
-import { createStakeLifecycle } from './stake/lifecycle.js';
-import { bootstrapPlayMode, attachBalanceRefresh } from './stake/bootstrap.js';
+
+initSuki({
+  gameId: 'pure-plinko',
+  replayVersion: '1',
+  sessionStorageKey: 'purePlinko.rgsSessionID',
+});
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 const balanceEl = document.getElementById('balance');
@@ -64,7 +74,7 @@ const replayMode = isReplayMode();
 /** @type {object | null} */
 let replayRound = null;
 let lastReplayUrl = '';
-const devMode = devFlag();
+const devMode = showDevTools();
 
 const jurisdictionCtrl = createJurisdictionController(() => {
   syncDevTools();
@@ -72,19 +82,32 @@ const jurisdictionCtrl = createJurisdictionController(() => {
   syncHud();
 });
 
-const lifecycle = createStakeLifecycle({
+const lifecycle = createSukiLifecycle({
   jurisdiction: jurisdictionCtrl,
-  performRoundVisual: async (round) => {
-    const drop = parsePlinkoDrop(round);
-    await animateDrop(drop.bucket, drop.path);
+  handlers: {
+    plinkoDrop: async (event, { animate }) => {
+      if (animate) {
+        await animateDrop(event.bucket, event.path);
+      } else {
+        drawBoard(ctx, layout, PAYTABLE, event.bucket);
+      }
+    },
+    setTotalWin: async () => {},
+    finalWin: async () => {},
   },
-  showStaticResult: (round) => {
+  onResumeStatic: (round) => {
+    const drop = parsePlinkoDrop(round);
+    drawBoard(ctx, layout, PAYTABLE, drop.bucket);
+  },
+  onStaticRound: (round) => {
     const drop = parsePlinkoDrop(round);
     drawBoard(ctx, layout, PAYTABLE, drop.bucket);
   },
   applyBalance: (balanceObj) => {
     balance = apiToDisplay(balanceObj.amount);
   },
+  buildSettledResult: buildPlinkoSettledResult,
+  playingMessage: 'Dropping…',
   onRoundSettled: (round, result, { recordSession }) => {
     const payout = apiToDisplay(result.payoutApi);
     const betDisplay = apiToDisplay(round.amount);
@@ -380,20 +403,20 @@ async function onDrop() {
       await lifecycle.executeDrop({ animate: true });
     } catch (err) {
       console.error(err);
-      const code = String(err.message);
-      if (code === 'ERR_BE') {
+      const policy = classifyRgsError(String(err.message));
+      if (policy.shouldResumeRound) {
         try {
           const data = await authenticate();
           applyAuthConfig(data);
           if (data.round?.active && data.round.state?.length) {
-            await lifecycle.resumeRound(data.round, { lastEvent: data.meta?.lastEvent });
+            await lifecycle.resumeRound(data.round, { meta: data.meta });
             return;
           }
         } catch (resumeErr) {
           console.error(resumeErr);
         }
       }
-      setMessage(messageForRgsCode(code));
+      setMessage(policy.message);
     }
   });
 }

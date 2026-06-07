@@ -1,0 +1,25 @@
+name: Smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install
+      - run: npm run test:smoke
+      - name: Integration smoke
+        run: |
+          node server.mjs &
+          echo $! > server.pid
+          sleep 2
+          SUKI_RUN_INTEGRATION=1 SUKI_SMOKE_URL=http://127.0.0.1:5174 node node_modules/@kap-solo/suki-engine/harness/smoke.mjs
+          kill "$(cat server.pid)"
