@@ -102,6 +102,7 @@ const game = createGameBootstrap({
       replayNote: replayNoteEl,
       dropButton: dropBtn,
     },
+    screenPreview: { root: document.querySelector('.layout') },
   },
   lifecycle: {
     handlers: {

@@ -2,6 +2,8 @@
 
 Minimal high-volatility Plinko prototype — lottery-ticket logic, no story wrapper.
 
+**URLs (local, Render, Stake screens):** [Suki DEV-URLS.md](../Suki-Engine/DEV-URLS.md)
+
 ## Run locally
 
 Double-click `start.bat` (starts Node mock RGS + opens the browser) or:
