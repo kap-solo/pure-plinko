@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pure Plinko — prototype</title>
+    <link rel="stylesheet" href="/vendor/suki-engine/client/suki/stakeLayout.css" />
+    <link rel="stylesheet" href="/vendor/suki-engine/client/suki/betUi.css" />
     <link rel="stylesheet" href="css/style.css" />
     <script type="importmap">
       {
@@ -14,87 +16,87 @@
     </script>
   </head>
   <body>
-    <main class="layout">
-      <header>
+    <main class="layout suki-stake-shell">
+      <div class="suki-bg suki-bg-mobile-l" aria-hidden="true"></div>
+      <div class="suki-bg suki-bg-mobile-ms" aria-hidden="true"></div>
+      <div class="suki-bg suki-bg-landscape" aria-hidden="true"></div>
+
+      <header class="suki-brand">
         <h1>Pure Plinko</h1>
         <p class="subtitle">Working title · one drop, one result</p>
       </header>
 
-      <div id="replay-banner" class="replay-banner" hidden>
+      <div id="replay-banner" class="replay-banner suki-replay-banner" hidden>
         <span class="replay-label">Replay</span>
         <span class="replay-note" id="replay-note">Recorded round — not a live bet</span>
       </div>
 
-      <section class="hud" id="balance-hud" aria-label="Balance">
-        <div class="stat">
-          <span class="label" id="balance-label">Balance</span>
-          <span class="value" id="balance">$0.00</span>
+      <aside class="suki-flank-left" aria-hidden="true">
+        <div class="suki-flank-slot plinko-flank">
+          <span class="suki-flank-placeholder">Character</span>
         </div>
-        <div class="stat">
-          <span class="label" id="bet-label">Bet</span>
-          <span class="value" id="bet-display">$1.00</span>
+      </aside>
+
+      <section class="suki-game-core">
+        <section class="hud" id="balance-hud" aria-label="Balance">
+          <div class="stat">
+            <span class="label" id="balance-label">Balance</span>
+            <span class="value" id="balance">$0.00</span>
+          </div>
+          <div class="stat">
+            <span class="label" id="bet-label">Bet</span>
+            <span class="value" id="bet-display">$1.00</span>
+          </div>
+          <div class="stat stat-wide">
+            <span class="label" id="last-result-label">Last result</span>
+            <span class="value" id="last-result">—</span>
+          </div>
+          <div class="stat" id="session-timer-stat" hidden>
+            <span class="label">Session time</span>
+            <span class="value tabular" id="session-timer">00:00</span>
+          </div>
+        </section>
+
+        <section class="hud session" id="session-panel" hidden aria-label="Session">
+          <div class="stat">
+            <span class="label" id="session-plays-label">Session plays</span>
+            <span class="value" id="session-plays">0</span>
+          </div>
+          <div class="stat">
+            <span class="label" id="session-pl-label">Session P/L</span>
+            <span class="value" id="session-pl">$0.00</span>
+          </div>
+          <div class="stat">
+            <span class="label">Best win</span>
+            <span class="value" id="session-best">—</span>
+          </div>
+          <div class="stat">
+            <span class="label">Avg return</span>
+            <span class="value" id="session-avg-return">—</span>
+          </div>
+        </section>
+
+        <div class="stage">
+          <canvas id="board" width="480" height="552" aria-label="Plinko board"></canvas>
         </div>
-        <div class="stat" style="grid-column: 1 / -1">
-          <span class="label" id="last-result-label">Last result</span>
-          <span class="value" id="last-result">—</span>
-        </div>
-        <div class="stat" id="session-timer-stat" hidden>
-          <span class="label">Session time</span>
-          <span class="value tabular" id="session-timer">00:00</span>
-        </div>
+
+        <p class="message" id="message">Set bet · press Drop.</p>
       </section>
 
-      <section class="hud session" id="session-panel" hidden aria-label="Session">
-        <div class="stat">
-          <span class="label" id="session-plays-label">Session plays</span>
-          <span class="value" id="session-plays">0</span>
-        </div>
-        <div class="stat">
-          <span class="label" id="session-pl-label">Session P/L</span>
-          <span class="value" id="session-pl">$0.00</span>
-        </div>
-        <div class="stat">
-          <span class="label">Best win</span>
-          <span class="value" id="session-best">—</span>
-        </div>
-        <div class="stat">
-          <span class="label">Avg return</span>
-          <span class="value" id="session-avg-return">—</span>
-        </div>
-      </section>
+      <div class="suki-controls-slot" id="bet-ui-root"></div>
 
-      <div class="stage">
-        <canvas id="board" width="480" height="552" aria-label="Plinko board"></canvas>
-      </div>
+      <footer class="suki-footer">
+        <p class="stats" id="stats"></p>
+        <p class="compliance-dev" id="compliance-dev" data-suki-dev hidden></p>
+      </footer>
 
-      <p class="message" id="message">Set bet · press Drop.</p>
-
-      <div class="controls" id="play-controls">
-        <div class="bet-row" id="bet-chips" aria-label="Bet amount"></div>
-        <button id="drop-btn" type="button">Drop</button>
-        <div class="test-row" data-suki-dev>
-          <button id="autoplay-btn" type="button" class="test-btn">100 play</button>
-          <button id="new-session-btn" type="button" class="test-btn">New session</button>
-        </div>
-        <button id="copy-replay-btn" type="button" class="test-btn copy-replay-btn" data-suki-dev hidden>
-          Copy replay link
-        </button>
-      </div>
-
-      <div class="controls" id="replay-controls" hidden>
-        <button id="replay-again-btn" type="button" class="test-btn">Replay again</button>
-      </div>
-
-      <p class="stats" id="stats"></p>
-      <p class="compliance-dev" id="compliance-dev" data-suki-dev hidden></p>
-
-      <aside class="principles" data-suki-dev>
+      <aside class="principles suki-dev-aside" data-suki-dev>
         <strong>What “pure” means here</strong>
         <ul>
           <li>One action: <strong>Drop</strong> — no risk sliders, no row picker.</li>
           <li>Paytable always visible under the board.</li>
           <li>Outcome is chosen first; the ball path is performance only (Stake-shaped).</li>
-          <li>Stepped pay ladder: 120,000× → 2,000× → … → 0.1× centre (weights TBD in math-sdk).</li>
+          <li>Layout uses Suki Stake shell — test <code>mobile-l</code>, <code>mobile-s</code>, <code>desktop</code>, <code>popout-s</code>.</li>
         </ul>
       </aside>
     </main>

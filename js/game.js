@@ -8,6 +8,7 @@ import {
   authenticate,
   buildReplayUrl,
   classifyRgsError,
+  createBetUi,
   createGameBootstrap,
   getReplayParams,
   getSessionID,
@@ -29,23 +30,18 @@ const balanceEl = document.getElementById('balance');
 const betEl = document.getElementById('bet-display');
 const resultEl = document.getElementById('last-result');
 const messageEl = document.getElementById('message');
-const dropBtn = document.getElementById('drop-btn');
-const autoplayBtn = document.getElementById('autoplay-btn');
-const newSessionBtn = document.getElementById('new-session-btn');
-const copyReplayBtn = document.getElementById('copy-replay-btn');
 const replayBanner = document.getElementById('replay-banner');
-const playControls = document.getElementById('play-controls');
-const replayControls = document.getElementById('replay-controls');
-const replayAgainBtn = document.getElementById('replay-again-btn');
 const balanceHud = document.getElementById('balance-hud');
 const statsEl = document.getElementById('stats');
 const complianceDevEl = document.getElementById('compliance-dev');
 const sessionTimerStat = document.getElementById('session-timer-stat');
 const sessionTimerEl = document.getElementById('session-timer');
 const principlesAside = document.querySelector('.principles');
-const testControlsRow = document.querySelector('.test-row');
 
-const betChips = document.getElementById('bet-chips');
+const betUi = createBetUi({
+  root: document.getElementById('bet-ui-root'),
+  showModeRow: false,
+});
 const sessionPanel = document.getElementById('session-panel');
 const sessionPlaysEl = document.getElementById('session-plays');
 const sessionPlEl = document.getElementById('session-pl');
@@ -87,10 +83,10 @@ const game = createGameBootstrap({
   shell: {
     elements: {
       complianceDev: complianceDevEl,
-      testControls: testControlsRow,
-      copyReplay: copyReplayBtn,
-      autoplay: autoplayBtn,
-      newSession: newSessionBtn,
+      testControls: betUi.elements.testControls,
+      copyReplay: betUi.elements.copyReplay,
+      autoplay: betUi.elements.autoplay,
+      newSession: betUi.elements.newSession,
       devAside: principlesAside,
       sessionTimer: sessionTimerEl,
       sessionTimerContainer: sessionTimerStat,
@@ -100,9 +96,9 @@ const game = createGameBootstrap({
       sessionPlaysLabel: sessionPlaysLabelEl,
       sessionPlLabel: sessionPlLabelEl,
       replayNote: replayNoteEl,
-      dropButton: dropBtn,
+      dropButton: betUi.elements.dropButton,
     },
-    screenPreview: { root: document.querySelector('.layout') },
+    screenPreview: { root: document.querySelector('.suki-stake-shell') },
   },
   lifecycle: {
     handlers: {
@@ -148,7 +144,7 @@ const game = createGameBootstrap({
         amountApi: round.amount,
         mode: game.betModes.replayModeKey(),
       });
-      copyReplayBtn.hidden = false;
+      betUi.setLastReplayUrl(lastReplayUrl);
       syncControls();
 
       displayRoundResult({
@@ -174,7 +170,7 @@ const game = createGameBootstrap({
       if (auth.betLevelsDisplay.length) {
         betOptions = auth.betLevelsDisplay;
         bet = auth.defaultBetDisplay ?? betOptions[0];
-        renderBetChips();
+        betUi.setBetLevels(auth.betLevelsDisplay, bet);
       }
     },
   },
@@ -198,6 +194,35 @@ const game = createGameBootstrap({
 
 const { controls, lifecycle, applyAuthConfig, syncDevTools } = game;
 
+betUi.bind({
+  game,
+  replayMode,
+  turboDisablesButton: true,
+  getBet: () => bet,
+  setBet: (value) => {
+    bet = value;
+  },
+  getBetOptions: () => betOptions,
+  setBetOptions: (levels) => {
+    betOptions = levels;
+  },
+  getBusy: () => dropping || autoplaying,
+  getPlaying: () => dropping,
+  getAutoplaying: () => autoplaying,
+  getPlayLabel: () => copyTerm('drop'),
+  onBetChange: syncHud,
+  onPlay: onDrop,
+  onTurbo: () => {
+    animationSpeed = 3;
+  },
+  onAutoplay: onAutoplay100,
+  onNewSession: onNewSession,
+  onCopyReplay: onCopyReplayLink,
+  onReplayAgain: () => {
+    if (replayRound && !dropping) playReplayAnimation(replayRound, { showIntro: false });
+  },
+});
+
 function fmt(amount) {
   return game.formatCurrency(amount);
 }
@@ -206,11 +231,26 @@ function copyTerm(key) {
   return game.copy.term(key);
 }
 
+const BOARD_ASPECT = 1 / 1.35;
+
 function resizeCanvas() {
-  const rect = canvas.parentElement.getBoundingClientRect();
-  const size = Math.min(rect.width, 520);
-  canvas.width = size;
-  canvas.height = size * 1.35;
+  const stage = canvas.parentElement;
+  if (!stage) return;
+
+  const rect = stage.getBoundingClientRect();
+  const pad = 8;
+  const maxW = Math.max(1, rect.width - pad);
+  const maxH = Math.max(1, rect.height - pad);
+
+  let width = maxW;
+  let height = width / BOARD_ASPECT;
+  if (height > maxH) {
+    height = maxH;
+    width = height * BOARD_ASPECT;
+  }
+
+  canvas.width = Math.max(1, Math.floor(width));
+  canvas.height = Math.max(1, Math.floor(height));
   layout = createBoardLayout(canvas, GAME.rows);
   drawBoard(ctx, layout, PAYTABLE);
 }
@@ -241,18 +281,16 @@ function syncSessionHud() {
 
 function setPlayModeUi() {
   replayBanner.hidden = true;
-  playControls.hidden = false;
-  replayControls.hidden = true;
+  betUi.setView('play');
   balanceHud.hidden = false;
 }
 
 function setReplayModeUi() {
   replayBanner.hidden = false;
-  playControls.hidden = true;
-  replayControls.hidden = false;
+  betUi.setView('replay');
   balanceHud.hidden = true;
   sessionPanel.hidden = true;
-  copyReplayBtn.hidden = true;
+  betUi.setLastReplayUrl('');
 }
 
 function syncHud() {
@@ -287,23 +325,6 @@ function displayApiRoundResult(result) {
   });
 }
 
-function renderBetChips() {
-  betChips.innerHTML = '';
-  for (const amount of betOptions) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = `chip${amount === bet ? ' active' : ''}`;
-    btn.textContent = fmt(amount);
-    btn.addEventListener('click', () => {
-      if (dropping || autoplaying) return;
-      bet = amount;
-      renderBetChips();
-      syncHud();
-    });
-    betChips.appendChild(btn);
-  }
-}
-
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -313,43 +334,7 @@ function scaledSleep(ms) {
 }
 
 function syncControls() {
-  if (replayMode) {
-    replayAgainBtn.disabled = dropping || !replayRound;
-    return;
-  }
-
-  const busy = dropping || autoplaying;
-  autoplayBtn.disabled = busy || !game.rgsReady || !controls.canAutoplay;
-  newSessionBtn.disabled = busy;
-  copyReplayBtn.disabled = busy || !lastReplayUrl;
-
-  for (const chip of betChips.querySelectorAll('button')) {
-    chip.disabled = busy;
-  }
-
-  if (autoplaying || !game.rgsReady) {
-    dropBtn.textContent = copyTerm('drop');
-    dropBtn.classList.remove('fast');
-    dropBtn.disabled = true;
-    return;
-  }
-
-  if (dropping) {
-    if (controls.canTurbo) {
-      dropBtn.textContent = 'Fast';
-      dropBtn.classList.add('fast');
-      dropBtn.disabled = false;
-    } else {
-      dropBtn.textContent = copyTerm('drop');
-      dropBtn.classList.remove('fast');
-      dropBtn.disabled = true;
-    }
-    return;
-  }
-
-  dropBtn.textContent = copyTerm('drop');
-  dropBtn.classList.remove('fast');
-  dropBtn.disabled = false;
+  betUi.sync();
 }
 
 async function animateDrop(bucket, path) {
@@ -477,25 +462,16 @@ async function onAutoplay100() {
   }
 }
 
-dropBtn.addEventListener('click', () => {
-  if (dropping && controls.canTurbo) {
-    animationSpeed = 3;
-    dropBtn.disabled = true;
-    return;
-  }
-  onDrop();
-});
-
 async function onNewSession() {
   if (dropping || autoplaying) return;
-  newSessionBtn.disabled = true;
+  betUi.elements.newSession.disabled = true;
   try {
     startNewRgsSession();
     game.sessionTimer?.reset();
     session = resetSession();
     resultEl.textContent = '—';
     lastReplayUrl = '';
-    copyReplayBtn.hidden = true;
+    betUi.setLastReplayUrl('');
     syncSessionHud();
     setMessage('Starting new session…');
 
@@ -590,12 +566,6 @@ function handleAuthRoundOutcome(authOutcome) {
   }
 }
 
-autoplayBtn.addEventListener('click', onAutoplay100);
-newSessionBtn.addEventListener('click', onNewSession);
-copyReplayBtn.addEventListener('click', onCopyReplayLink);
-replayAgainBtn.addEventListener('click', () => {
-  if (replayRound && !dropping) playReplayAnimation(replayRound, { showIntro: false });
-});
 window.addEventListener('resize', resizeCanvas);
 
 window.addEventListener('keydown', (e) => {
@@ -605,7 +575,7 @@ window.addEventListener('keydown', (e) => {
   onDrop();
 });
 
-renderBetChips();
+betUi.renderBetLevels();
 resizeCanvas();
 setPlayModeUi();
 syncDevTools();
