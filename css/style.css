@@ -199,7 +199,7 @@ h1 {
 }
 
 .replay-banner {
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
@@ -209,6 +209,10 @@ h1 {
   border: 1px solid #3d2a14;
   background: #1a1208;
   font-size: 0.78rem;
+}
+
+.replay-banner:not([hidden]) {
+  display: flex;
 }
 
 .replay-label {
@@ -234,6 +238,14 @@ h1 {
   font-size: 0.75rem;
   color: #6b7a90;
   line-height: 1.45;
+}
+
+.compliance-dev {
+  margin-top: 0.35rem;
+  text-align: center;
+  font-size: 0.65rem;
+  color: #4a5568;
+  letter-spacing: 0.03em;
 }
 
 .principles {

@@ -1,41 +1,29 @@
-import {
-  BET_OPTIONS,
-  DEFAULT_BET,
-  GAME,
-  PAYTABLE,
-  TIMING,
-} from './config.js';
+/**
+ * Pure Plinko — game presentation layer.
+ * Stake compliance (RGS lifecycle, jurisdiction, errors) lives in js/stake/*.
+ */
+
+import { BET_OPTIONS, DEFAULT_BET, GAME, PAYTABLE, TIMING } from './config.js';
 import { apiToDisplay, displayToApi } from './money.js';
 import {
   authenticate,
   buildReplayUrl,
-  endRound,
   getReplayParams,
   getSessionID,
   isReplayMode,
+  messageForRgsCode,
   parsePlinkoDrop,
-  play,
   requestReplay,
-  roundPayoutMultiplier,
   startNewRgsSession,
 } from './rgs.js';
-import {
-  ensureSession,
-  loadSession,
-  recordPlay,
-  resetSession,
-  saveSession,
-  sessionAvgReturnPercent,
-} from './session.js';
+import { ensureSession, loadSession, recordPlay, resetSession, saveSession, sessionAvgReturnPercent } from './session.js';
 import { formatMoney, formatMult } from './math.js';
 import { ballRadii, bounceRisePx, rowDurationMs, sampleRowMotion } from './physics.js';
-import {
-  bucketCenterX,
-  createBoardLayout,
-  drawBall,
-  drawBoard,
-} from './render.js';
-
+import { bucketCenterX, createBoardLayout, drawBall, drawBoard } from './render.js';
+import { isDevMode as devFlag, getDevComplianceLabel, getJurisdictionProfileName } from './stake/config.js';
+import { createJurisdictionController } from './stake/jurisdiction.js';
+import { createStakeLifecycle } from './stake/lifecycle.js';
+import { bootstrapPlayMode, attachBalanceRefresh } from './stake/bootstrap.js';
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 const balanceEl = document.getElementById('balance');
@@ -52,6 +40,7 @@ const replayControls = document.getElementById('replay-controls');
 const replayAgainBtn = document.getElementById('replay-again-btn');
 const balanceHud = document.getElementById('balance-hud');
 const statsEl = document.getElementById('stats');
+const complianceDevEl = document.getElementById('compliance-dev');
 const betChips = document.getElementById('bet-chips');
 const sessionPanel = document.getElementById('session-panel');
 const sessionPlaysEl = document.getElementById('session-plays');
@@ -69,13 +58,68 @@ let betOptions = [...BET_OPTIONS];
 let rgsReady = false;
 let dropping = false;
 let autoplaying = false;
-/** 1 = normal; 3 = FAST clicked mid-drop. */
 let animationSpeed = 1;
 let layout = createBoardLayout(canvas, GAME.rows);
 const replayMode = isReplayMode();
 /** @type {object | null} */
 let replayRound = null;
 let lastReplayUrl = '';
+const devMode = devFlag();
+
+const jurisdictionCtrl = createJurisdictionController(() => {
+  syncDevTools();
+  syncControls();
+  syncHud();
+});
+
+const lifecycle = createStakeLifecycle({
+  jurisdiction: jurisdictionCtrl,
+  performRoundVisual: async (round) => {
+    const drop = parsePlinkoDrop(round);
+    await animateDrop(drop.bucket, drop.path);
+  },
+  showStaticResult: (round) => {
+    const drop = parsePlinkoDrop(round);
+    drawBoard(ctx, layout, PAYTABLE, drop.bucket);
+  },
+  applyBalance: (balanceObj) => {
+    balance = apiToDisplay(balanceObj.amount);
+  },
+  onRoundSettled: (round, result, { recordSession }) => {
+    const payout = apiToDisplay(result.payoutApi);
+    const betDisplay = apiToDisplay(round.amount);
+    bet = betDisplay;
+    syncHud();
+
+    if (recordSession) {
+      session = ensureSession(session);
+      recordPlay(session, { bet: betDisplay, payout, multiplier: result.multiplier });
+      saveSession(session);
+      syncSessionHud();
+    }
+
+    const replayEvent = result.replayEvent || `${getSessionID()}-${round.roundID}`;
+    lastReplayUrl = buildReplayUrl({
+      event: replayEvent,
+      amountApi: round.amount,
+      mode: 'base',
+    });
+    copyReplayBtn.hidden = false;
+    syncControls();
+
+    displayRoundResult({
+      bucket: result.bucket,
+      multiplier: result.multiplier,
+      payout,
+      profit: payout - betDisplay,
+    });
+  },
+  setMessage,
+  getBetApi: () => displayToApi(bet),
+  setBetFromApi: (amountApi) => {
+    bet = apiToDisplay(amountApi);
+  },
+});
 
 function resizeCanvas() {
   const rect = canvas.parentElement.getBoundingClientRect();
@@ -93,12 +137,37 @@ function formatSignedMoney(amount) {
   return formatMoney(0);
 }
 
-function applyBalance(balanceObj) {
-  balance = apiToDisplay(balanceObj.amount);
+function applyAuthConfig(data) {
+  if (data.balance) {
+    balance = apiToDisplay(data.balance.amount);
+  }
+  if (data.config?.betLevels?.length) {
+    betOptions = data.config.betLevels.map(apiToDisplay);
+    bet = apiToDisplay(data.config.defaultBetLevel ?? displayToApi(DEFAULT_BET));
+    if (!betOptions.includes(bet)) {
+      bet = betOptions[0];
+    }
+    renderBetChips();
+  }
+  if (data.config?.jurisdiction) {
+    jurisdictionCtrl.mergeFromServer(data.config.jurisdiction);
+  }
+  if (devMode) {
+    jurisdictionCtrl.applyDevProfile(getJurisdictionProfileName());
+  }
+}
+
+function syncDevTools() {
+  autoplayBtn.hidden = !devMode || !jurisdictionCtrl.autoplayAllowed;
+  newSessionBtn.hidden = !devMode;
+  if (devMode && complianceDevEl) {
+    complianceDevEl.hidden = false;
+    complianceDevEl.textContent = `Compliance dev · ${getDevComplianceLabel()}`;
+  }
 }
 
 function syncSessionHud() {
-  if (!session) {
+  if (!session || !jurisdictionCtrl.showNetPosition) {
     sessionPanel.hidden = true;
     return;
   }
@@ -134,12 +203,36 @@ function syncHud() {
   balanceEl.textContent = replayMode ? '—' : formatMoney(balance);
   betEl.textContent = formatMoney(bet);
   const risePx = bounceRisePx(layout, TIMING.bouncePop).toFixed(0);
-  statsEl.textContent = `${GAME.rows} rows · max ${formatMult(GAME.maxWinMult)} · bounce ${risePx}px · RTP ${GAME.targetRtpPercent}%`;
+  const rtpPart = jurisdictionCtrl.showRtp ? ` · RTP ${GAME.targetRtpPercent}%` : '';
+  statsEl.textContent = `${GAME.rows} rows · max ${formatMult(GAME.maxWinMult)} · bounce ${risePx}px${rtpPart}`;
   syncSessionHud();
 }
 
 function setMessage(text) {
   messageEl.textContent = text;
+}
+
+function displayRoundResult({ bucket, multiplier, payout, profit }) {
+  resultEl.textContent = `${formatMult(multiplier)} → ${formatMoney(payout)}`;
+  if (multiplier >= 1000) {
+    setMessage(`Jackpot bucket #${bucket} — ${formatMult(multiplier)} on ${formatMoney(bet)}.`);
+  } else if (profit > 0) {
+    setMessage(`Bucket #${bucket} — won ${formatMoney(profit)}.`);
+  } else if (payout === bet) {
+    setMessage(`Bucket #${bucket} — push, stake returned.`);
+  } else {
+    setMessage(`Bucket #${bucket} — ${formatMult(multiplier)} return.`);
+  }
+}
+
+function displayApiRoundResult(result) {
+  if (!result) return;
+  displayRoundResult({
+    bucket: result.bucket,
+    multiplier: result.multiplier,
+    payout: apiToDisplay(result.payoutApi),
+    profit: apiToDisplay(result.profitApi),
+  });
 }
 
 function renderBetChips() {
@@ -174,7 +267,7 @@ function syncControls() {
   }
 
   const busy = dropping || autoplaying;
-  autoplayBtn.disabled = busy || !rgsReady;
+  autoplayBtn.disabled = busy || !rgsReady || !jurisdictionCtrl.autoplayAllowed;
   newSessionBtn.disabled = busy;
   copyReplayBtn.disabled = busy || !lastReplayUrl;
 
@@ -190,9 +283,15 @@ function syncControls() {
   }
 
   if (dropping) {
-    dropBtn.textContent = 'Fast';
-    dropBtn.classList.add('fast');
-    dropBtn.disabled = false;
+    if (jurisdictionCtrl.turboAllowed) {
+      dropBtn.textContent = 'Fast';
+      dropBtn.classList.add('fast');
+      dropBtn.disabled = false;
+    } else {
+      dropBtn.textContent = 'Drop';
+      dropBtn.classList.remove('fast');
+      dropBtn.disabled = true;
+    }
     return;
   }
 
@@ -249,90 +348,15 @@ async function animateDrop(bucket, path) {
   }
 }
 
-function setResultMessage(result, payout, profit) {
-  resultEl.textContent = `${formatMult(result.multiplier)} → ${formatMoney(payout)}`;
-  if (result.multiplier >= 1000) {
-    setMessage(`Jackpot bucket #${result.bucket} — ${formatMult(result.multiplier)} on ${formatMoney(bet)}.`);
-  } else if (profit > 0) {
-    setMessage(`Bucket #${result.bucket} — won ${formatMoney(profit)}.`);
-  } else if (payout === bet) {
-    setMessage(`Bucket #${result.bucket} — push, stake returned.`);
-  } else {
-    setMessage(`Bucket #${result.bucket} — ${formatMult(result.multiplier)} return.`);
-  }
-}
-
-/** @param {{ animate?: boolean }} [options] */
-async function executeDrop({ animate = true } = {}) {
-  const amountApi = displayToApi(bet);
-  const playRes = await play({ amountApi, mode: 'BASE' });
-  applyBalance(playRes.balance);
-
-  const round = playRes.round;
-  const drop = parsePlinkoDrop(round);
-  const multiplier = roundPayoutMultiplier(round);
-
-  if (animate) {
-    setMessage('Dropping…');
-    await animateDrop(drop.bucket, drop.path);
-  } else {
-    drawBoard(ctx, layout, PAYTABLE, drop.bucket);
-  }
-
-  const endRes = await endRound();
-  applyBalance(endRes.balance);
-
-  const payout = apiToDisplay(round.payout);
-  syncHud();
-
-  session = ensureSession(session);
-  recordPlay(session, { bet, payout, multiplier });
-  saveSession(session);
-  syncSessionHud();
-
-  const replayEvent = endRes.replayEvent || `${getSessionID()}-${round.roundID}`;
-  lastReplayUrl = buildReplayUrl({
-    event: replayEvent,
-    amountApi: round.amount,
-    mode: 'base',
-  });
-  copyReplayBtn.hidden = false;
-  syncControls();
-
-  return {
-    bucket: drop.bucket,
-    multiplier,
-    payout,
-    profit: payout - bet,
-    replayEvent,
-  };
-}
-
-async function playReplayAnimation(round, { showIntro = true } = {}) {
-  const drop = parsePlinkoDrop(round);
-  const multiplier = roundPayoutMultiplier(round);
-  bet = apiToDisplay(round.amount);
-  const payout = apiToDisplay(round.payout);
-  syncHud();
-
+async function withDropLock(fn) {
   dropping = true;
   animationSpeed = 1;
   syncControls();
-
   try {
-    if (showIntro) {
-      setMessage('Replaying round…');
-    }
-    await animateDrop(drop.bucket, drop.path);
-    const profit = payout - bet;
-    setResultMessage(
-      { bucket: drop.bucket, multiplier },
-      payout,
-      profit,
-    );
-    setMessage(`Replay — bucket #${drop.bucket}, ${formatMult(multiplier)} on ${formatMoney(bet)}.`);
+    return await fn();
   } finally {
     dropping = false;
+    animationSpeed = 1;
     syncControls();
   }
 }
@@ -348,41 +372,35 @@ async function onDrop() {
     return;
   }
 
-  dropping = true;
-  animationSpeed = 1;
-  syncControls();
-
-  try {
-    const result = await executeDrop({ animate: true });
-    setResultMessage(result, result.payout, result.profit);
-  } catch (err) {
-    console.error(err);
-    if (String(err.message) === 'ERR_IPB') {
-      setMessage('Not enough balance.');
-    } else {
-      setMessage(`Play failed — ${err.message}`);
+  await withDropLock(async () => {
+    try {
+      await lifecycle.executeDrop({ animate: true });
+    } catch (err) {
+      console.error(err);
+      const code = String(err.message);
+      if (code === 'ERR_BE') {
+        try {
+          const data = await authenticate();
+          applyAuthConfig(data);
+          if (data.round?.active && data.round.state?.length) {
+            await lifecycle.resumeRound(data.round, { lastEvent: data.meta?.lastEvent });
+            return;
+          }
+        } catch (resumeErr) {
+          console.error(resumeErr);
+        }
+      }
+      setMessage(messageForRgsCode(code));
     }
-  } finally {
-    dropping = false;
-    animationSpeed = 1;
-    syncControls();
-  }
+  });
 }
 
 async function onAutoplay100() {
-  if (dropping || autoplaying) return;
-  if (!rgsReady) {
-    setMessage('Connecting to RGS…');
-    return;
-  }
-  if (balance < bet) {
-    setMessage('Not enough balance.');
-    return;
-  }
+  if (dropping || autoplaying || !jurisdictionCtrl.autoplayAllowed) return;
+  if (!rgsReady || balance < bet) return;
 
   autoplaying = true;
   syncControls();
-
   let played = 0;
   try {
     for (let i = 0; i < 100; i += 1) {
@@ -391,10 +409,7 @@ async function onAutoplay100() {
         break;
       }
       setMessage(`Autoplay ${i + 1}/100…`);
-      const result = await executeDrop({ animate: false });
-      if (i === 99) {
-        setResultMessage(result, result.payout, result.profit);
-      }
+      await lifecycle.executeDrop({ animate: false });
       played += 1;
       await sleep(0);
     }
@@ -403,7 +418,7 @@ async function onAutoplay100() {
     }
   } catch (err) {
     console.error(err);
-    setMessage(`Autoplay failed — ${err.message}`);
+    setMessage(messageForRgsCode(String(err.message)));
   } finally {
     autoplaying = false;
     syncControls();
@@ -411,7 +426,7 @@ async function onAutoplay100() {
 }
 
 dropBtn.addEventListener('click', () => {
-  if (dropping) {
+  if (dropping && jurisdictionCtrl.turboAllowed) {
     animationSpeed = 3;
     dropBtn.disabled = true;
     return;
@@ -421,32 +436,30 @@ dropBtn.addEventListener('click', () => {
 
 async function onNewSession() {
   if (dropping || autoplaying) return;
-
   newSessionBtn.disabled = true;
   try {
     startNewRgsSession();
     session = resetSession();
     resultEl.textContent = '—';
+    lastReplayUrl = '';
+    copyReplayBtn.hidden = true;
     syncSessionHud();
     setMessage('Starting new session…');
 
     const data = await authenticate();
-    applyBalance(data.balance);
-    if (data.config?.betLevels?.length) {
-      betOptions = data.config.betLevels.map(apiToDisplay);
-      bet = apiToDisplay(data.config.defaultBetLevel ?? displayToApi(DEFAULT_BET));
-      if (!betOptions.includes(bet)) {
-        bet = betOptions[0];
-      }
-      renderBetChips();
-    }
+    applyAuthConfig(data);
     rgsReady = true;
     syncHud();
-    setMessage(`New session — balance ${formatMoney(balance)}.`);
+    const authOutcome = await lifecycle.handleAuthRound(data.round, {
+      lastEvent: data.meta?.lastEvent,
+    });
+    if (authOutcome.status === 'ready') {
+      setMessage(`New session — balance ${formatMoney(balance)}.`);
+    }
   } catch (err) {
     console.error(err);
     rgsReady = false;
-    setMessage(`New session failed — ${err.message}`);
+    setMessage(messageForRgsCode(String(err.message)));
   } finally {
     syncControls();
   }
@@ -458,13 +471,34 @@ async function onCopyReplayLink() {
     await navigator.clipboard.writeText(lastReplayUrl);
     setMessage('Replay link copied.');
   } catch {
-    setMessage('Could not copy — select the URL from the address bar after opening replay.');
+    setMessage('Could not copy — paste the URL from the address bar.');
   }
 }
 
-async function onReplayAgain() {
-  if (!replayRound || dropping) return;
-  await playReplayAnimation(replayRound, { showIntro: false });
+async function playReplayAnimation(round, { showIntro = true } = {}) {
+  const drop = parsePlinkoDrop(round);
+  const multiplier = round.payoutMultiplier ?? (round.payout / Math.max(1, round.amount));
+  bet = apiToDisplay(round.amount);
+  const payout = apiToDisplay(round.payout);
+  syncHud();
+
+  dropping = true;
+  animationSpeed = 1;
+  syncControls();
+  try {
+    if (showIntro) setMessage('Replaying round…');
+    await animateDrop(drop.bucket, drop.path);
+    displayRoundResult({
+      bucket: drop.bucket,
+      multiplier,
+      payout,
+      profit: payout - bet,
+    });
+    setMessage(`Replay — bucket #${drop.bucket}, ${formatMult(multiplier)} on ${formatMoney(bet)}.`);
+  } finally {
+    dropping = false;
+    syncControls();
+  }
 }
 
 async function bootstrapReplay() {
@@ -474,7 +508,6 @@ async function bootstrapReplay() {
     setMessage('Replay URL missing event parameter.');
     return;
   }
-
   setMessage('Loading replay…');
   try {
     const data = await requestReplay({
@@ -491,54 +524,64 @@ async function bootstrapReplay() {
     await playReplayAnimation(replayRound);
   } catch (err) {
     console.error(err);
-    if (String(err.message) === 'ERR_BNF') {
-      setMessage('Replay not found — server may have restarted (replays are in-memory on the prototype).');
-    } else {
-      setMessage(`Replay failed — ${err.message}`);
-    }
+    setMessage(messageForRgsCode(String(err.message)));
   }
 }
 
-function bootstrapPlay() {
-  setPlayModeUi();
-  setMessage('Connecting to RGS…');
-  syncControls();
-
-  authenticate()
-    .then((data) => {
-      applyBalance(data.balance);
-      if (data.config?.betLevels?.length) {
-        betOptions = data.config.betLevels.map(apiToDisplay);
-        bet = apiToDisplay(data.config.defaultBetLevel ?? displayToApi(DEFAULT_BET));
-        if (!betOptions.includes(bet)) {
-          bet = betOptions[0];
-        }
-        renderBetChips();
-      }
-      rgsReady = true;
-      syncControls();
-      syncHud();
-      setMessage('Set bet · press Drop.');
-    })
-    .catch((err) => {
-      console.error(err);
-      setMessage('RGS unavailable — run: node server.mjs');
-    });
+function handleAuthRoundOutcome(authOutcome) {
+  if (authOutcome.status === 'resumed') {
+    setMessage('Round resumed.');
+  } else if (authOutcome.status === 'completed') {
+    displayApiRoundResult(authOutcome.result);
+    setMessage('Last completed round restored.');
+  }
 }
 
 autoplayBtn.addEventListener('click', onAutoplay100);
 newSessionBtn.addEventListener('click', onNewSession);
 copyReplayBtn.addEventListener('click', onCopyReplayLink);
-replayAgainBtn.addEventListener('click', onReplayAgain);
+replayAgainBtn.addEventListener('click', () => {
+  if (replayRound && !dropping) playReplayAnimation(replayRound, { showIntro: false });
+});
 window.addEventListener('resize', resizeCanvas);
+
+window.addEventListener('keydown', (e) => {
+  if (replayMode || !jurisdictionCtrl.spacebarAllowed || dropping || autoplaying || !rgsReady) return;
+  if (e.code !== 'Space' || e.repeat) return;
+  e.preventDefault();
+  onDrop();
+});
+
+attachBalanceRefresh({
+  get rgsReady() {
+    return rgsReady;
+  },
+  isBusy: () => dropping || autoplaying,
+  applyBalance: (balanceObj) => {
+    balance = apiToDisplay(balanceObj.amount);
+  },
+  syncHud,
+});
 
 renderBetChips();
 resizeCanvas();
+setPlayModeUi();
+syncDevTools();
 syncHud();
 syncControls();
 
 if (replayMode) {
   bootstrapReplay();
 } else {
-  bootstrapPlay();
+  bootstrapPlayMode({
+    applyAuthConfig,
+    lifecycle,
+    setMessage,
+    setRgsReady: (ready) => {
+      rgsReady = ready;
+      syncControls();
+    },
+    onReady: () => syncHud(),
+    onAuthRound: handleAuthRoundOutcome,
+  });
 }

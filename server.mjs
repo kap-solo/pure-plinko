@@ -7,7 +7,7 @@ import http from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { handleRgsRequest, handleReplayRequest } from './server/rgs-engine.mjs';
+import { handleBetEvent, handleRgsRequest, handleReplayRequest } from './server/rgs-engine.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 5174;
@@ -39,7 +39,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === 'POST' && url.pathname.startsWith('/wallet/')) {
+  if (req.method === 'POST' && (url.pathname.startsWith('/wallet/') || url.pathname === '/bet/event')) {
     let body = '';
     req.on('data', (chunk) => {
       body += chunk;
@@ -54,7 +54,10 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      const result = handleRgsRequest(url.pathname, parsed);
+      const result =
+        url.pathname === '/bet/event'
+          ? handleBetEvent(parsed)
+          : handleRgsRequest(url.pathname, parsed);
       if (!result) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: { code: 'ERR_VAL', message: 'Not found' } }));

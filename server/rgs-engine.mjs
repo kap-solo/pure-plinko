@@ -13,8 +13,37 @@ const sessions = new Map();
 /** @type {Map<string, object>} */
 const replayStore = new Map();
 
-const REPLAY_GAME = 'pure-plinko';
+const GAME_ID = 'pure-plinko';
+const REPLAY_GAME = GAME_ID;
 const REPLAY_VERSION = '1';
+
+const JURISDICTION_MOCK = {
+  strict: {
+    disabledTurbo: true,
+    disabledSuperTurbo: true,
+    disabledAutoplay: true,
+    disabledSpacebar: true,
+    disabledSlamstop: true,
+    displayNetPosition: false,
+    displayRTP: false,
+    minimumRoundDuration: 2500,
+  },
+};
+
+const DEFAULT_JURISDICTION = {
+  socialCasino: false,
+  disabledFullscreen: false,
+  disabledTurbo: false,
+  disabledSuperTurbo: false,
+  disabledAutoplay: false,
+  disabledSlamstop: false,
+  disabledSpacebar: false,
+  disabledBuyFeature: true,
+  displayNetPosition: true,
+  displayRTP: true,
+  displaySessionTimer: false,
+  minimumRoundDuration: 0,
+};
 
 function loadLookup() {
   const text = readFileSync(join(root, 'data/lookUpTable_base_0.csv'), 'utf8');
@@ -60,6 +89,8 @@ function getSession(sessionID) {
       currency: 'USD',
       roundID: 0,
       activeRound: null,
+      lastCompletedRound: null,
+      lastEvent: null,
     });
   }
   return sessions.get(sessionID);
@@ -81,31 +112,32 @@ export function handleRgsRequest(pathname, body) {
   const sessionID = body?.sessionID || 'local-demo';
 
   if (pathname === '/wallet/authenticate') {
+    if (body?._mock?.err_is) {
+      return error('ERR_IS', 'Mock session expired');
+    }
+
     const session = getSession(sessionID);
+    const jurisdiction = { ...DEFAULT_JURISDICTION };
+    const mockProfile = body?._mock?.jurisdiction;
+    if (mockProfile && JURISDICTION_MOCK[mockProfile]) {
+      Object.assign(jurisdiction, JURISDICTION_MOCK[mockProfile]);
+    }
+
+    const round = session.activeRound ?? session.lastCompletedRound ?? null;
+
     return success({
       balance: balanceObject(session),
       config: {
+        gameID: GAME_ID,
         minBet: 1 * API_MULT,
         maxBet: 1000 * API_MULT,
         stepBet: 1 * API_MULT,
         defaultBetLevel: 1 * API_MULT,
         betLevels: [1, 5, 10].map((d) => d * API_MULT),
-        jurisdiction: {
-          socialCasino: false,
-          disabledFullscreen: false,
-          disabledTurbo: false,
-          disabledSuperTurbo: false,
-          disabledAutoplay: false,
-          disabledSlamstop: false,
-          disabledSpacebar: false,
-          disabledBuyFeature: true,
-          displayNetPosition: true,
-          displayRTP: true,
-          displaySessionTimer: false,
-          minimumRoundDuration: 0,
-        },
+        jurisdiction,
       },
-      round: session.activeRound,
+      round,
+      meta: { lastEvent: session.lastEvent },
     });
   }
 
@@ -121,7 +153,7 @@ export function handleRgsRequest(pathname, body) {
       return error('ERR_VAL', 'Invalid bet amount');
     }
     if (session.activeRound?.active) {
-      return error('ERR_VAL', 'Round already active');
+      return error('ERR_BE', 'Round already active');
     }
     if (session.balance < amount) {
       return error('ERR_IPB', 'Insufficient balance');
@@ -164,12 +196,33 @@ export function handleRgsRequest(pathname, body) {
     session.balance += round.payout;
     const replayEvent = storeReplayRound(sessionID, round);
     round.active = false;
+    session.lastCompletedRound = {
+      roundID: round.roundID,
+      amount: round.amount,
+      payout: round.payout,
+      payoutMultiplier: round.payoutMultiplier,
+      active: false,
+      mode: round.mode,
+      state: round.state,
+    };
+    session.lastEvent = null;
     session.activeRound = null;
 
     return success({ balance: balanceObject(session), replayEvent });
   }
 
   return null;
+}
+
+export function handleBetEvent(body) {
+  const sessionID = body?.sessionID || 'local-demo';
+  const event = body?.event;
+  if (event === undefined || event === null || event === '') {
+    return error('ERR_VAL', 'Missing event');
+  }
+  const session = getSession(sessionID);
+  session.lastEvent = String(event);
+  return success({ event: String(event) });
 }
 
 function storeReplayRound(sessionID, round) {

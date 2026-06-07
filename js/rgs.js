@@ -1,9 +1,13 @@
 import { API_AMOUNT_MULTIPLIER } from './money.js';
+import { GAME_ID, REPLAY_VERSION, isReplayMode as isReplayModeConfig } from './stake/config.js';
+import { getMockFlags } from './stake/config.js';
 
 const SESSION_ID_KEY = 'purePlinko.rgsSessionID';
 
-export const REPLAY_GAME = 'pure-plinko';
-export const REPLAY_VERSION = '1';
+export const REPLAY_GAME = GAME_ID;
+export { GAME_ID, REPLAY_VERSION };
+export { isReplayMode } from './stake/config.js';
+export { messageForRgsCode } from './stake/errors.js';
 
 export function getSessionID() {
   const params = new URLSearchParams(window.location.search);
@@ -25,13 +29,16 @@ export function startNewRgsSession() {
   return sessionID;
 }
 
-/** @returns {{ rgsUrl: string, sessionID: string, language: string }} */
+export { isDevMode } from './stake/config.js';
+
+/** @returns {{ rgsUrl: string, sessionID: string, language: string, gameID: string }} */
 export function getRgsParams() {
   const params = new URLSearchParams(window.location.search);
   const rgsUrl = (params.get('rgs_url') || window.location.origin).replace(/\/$/, '');
   const sessionID = getSessionID();
   const language = params.get('lang') || 'en';
-  return { rgsUrl, sessionID, language };
+  const gameID = params.get('gameID') || GAME_ID;
+  return { rgsUrl, sessionID, language, gameID };
 }
 
 async function rgsPost(path, body) {
@@ -50,14 +57,24 @@ async function rgsPost(path, body) {
 }
 
 export async function authenticate() {
-  const { sessionID, language } = getRgsParams();
-  return rgsPost('/wallet/authenticate', { sessionID, language });
+  const { sessionID, language, gameID } = getRgsParams();
+  const body = { sessionID, language, gameID };
+  const mock = getMockFlags();
+  if (mock) body._mock = mock;
+  return rgsPost('/wallet/authenticate', body);
+}
+
+export async function fetchBalance() {
+  const { sessionID, gameID } = getRgsParams();
+  const data = await rgsPost('/wallet/balance', { sessionID, gameID });
+  return data.balance;
 }
 
 export async function play({ amountApi, currency = 'USD', mode = 'BASE' }) {
-  const { sessionID } = getRgsParams();
+  const { sessionID, gameID } = getRgsParams();
   return rgsPost('/wallet/play', {
     sessionID,
+    gameID,
     amount: amountApi,
     currency,
     mode,
@@ -65,12 +82,15 @@ export async function play({ amountApi, currency = 'USD', mode = 'BASE' }) {
 }
 
 export async function endRound() {
-  const { sessionID } = getRgsParams();
-  return rgsPost('/wallet/end-round', { sessionID });
+  const { sessionID, gameID } = getRgsParams();
+  return rgsPost('/wallet/end-round', { sessionID, gameID });
 }
 
-export function isReplayMode() {
-  return new URLSearchParams(window.location.search).get('replay') === 'true';
+/** Track book event progress for RGS resume (skipped in replay mode). */
+export async function reportBetEvent(eventIndex) {
+  if (isReplayModeConfig()) return;
+  const { sessionID, gameID } = getRgsParams();
+  return rgsPost('/bet/event', { sessionID, gameID, event: String(eventIndex) });
 }
 
 /** @returns {{ game: string, version: string, mode: string, event: string, amountApi: number }} */
