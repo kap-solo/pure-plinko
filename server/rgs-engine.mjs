@@ -10,6 +10,12 @@ const START_BALANCE_API = 1000 * API_MULT;
 /** @type {Map<string, object>} */
 const sessions = new Map();
 
+/** @type {Map<string, object>} */
+const replayStore = new Map();
+
+const REPLAY_GAME = 'pure-plinko';
+const REPLAY_VERSION = '1';
+
 function loadLookup() {
   const text = readFileSync(join(root, 'data/lookUpTable_base_0.csv'), 'utf8');
   return text
@@ -156,11 +162,70 @@ export function handleRgsRequest(pathname, body) {
     }
 
     session.balance += round.payout;
+    const replayEvent = storeReplayRound(sessionID, round);
     round.active = false;
     session.activeRound = null;
 
-    return success({ balance: balanceObject(session) });
+    return success({ balance: balanceObject(session), replayEvent });
   }
 
   return null;
+}
+
+function storeReplayRound(sessionID, round) {
+  const event = `${sessionID}-${round.roundID}`;
+  replayStore.set(event, {
+    game: REPLAY_GAME,
+    version: REPLAY_VERSION,
+    mode: 'base',
+    round: {
+      amount: round.amount,
+      payout: round.payout,
+      payoutMultiplier: round.payoutMultiplier,
+      active: false,
+      mode: round.mode || 'BASE',
+      state: round.state,
+    },
+  });
+  return event;
+}
+
+function roundFromBook(book, amountApi) {
+  const payoutMultiplier = book.payoutMultiplier / 100;
+  const payout = Math.round(amountApi * payoutMultiplier);
+  return {
+    amount: amountApi,
+    payout,
+    payoutMultiplier,
+    active: false,
+    mode: 'BASE',
+    state: book.events,
+  };
+}
+
+/** @param {string | null} amountQuery API amount from ?amount= on replay GET */
+export function handleReplayRequest(game, version, mode, event, amountQuery) {
+  const modeNorm = String(mode || '').toLowerCase();
+  if (game !== REPLAY_GAME || version !== REPLAY_VERSION || modeNorm !== 'base') {
+    return error('ERR_VAL', 'Invalid replay route');
+  }
+  if (!event) {
+    return error('ERR_VAL', 'Missing replay event');
+  }
+
+  const stored = replayStore.get(event);
+  if (stored) {
+    return success({ round: stored.round });
+  }
+
+  const bookId = Number(event);
+  if (Number.isFinite(bookId) && books.has(bookId)) {
+    const amountApi = Number(amountQuery) || API_MULT;
+    if (!Number.isFinite(amountApi) || amountApi <= 0) {
+      return error('ERR_VAL', 'Invalid replay amount');
+    }
+    return success({ round: roundFromBook(books.get(bookId), amountApi) });
+  }
+
+  return error('ERR_BNF', 'Replay not found');
 }

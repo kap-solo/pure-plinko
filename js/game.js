@@ -8,9 +8,14 @@ import {
 import { apiToDisplay, displayToApi } from './money.js';
 import {
   authenticate,
+  buildReplayUrl,
   endRound,
+  getReplayParams,
+  getSessionID,
+  isReplayMode,
   parsePlinkoDrop,
   play,
+  requestReplay,
   roundPayoutMultiplier,
   startNewRgsSession,
 } from './rgs.js';
@@ -40,6 +45,12 @@ const messageEl = document.getElementById('message');
 const dropBtn = document.getElementById('drop-btn');
 const autoplayBtn = document.getElementById('autoplay-btn');
 const newSessionBtn = document.getElementById('new-session-btn');
+const copyReplayBtn = document.getElementById('copy-replay-btn');
+const replayBanner = document.getElementById('replay-banner');
+const playControls = document.getElementById('play-controls');
+const replayControls = document.getElementById('replay-controls');
+const replayAgainBtn = document.getElementById('replay-again-btn');
+const balanceHud = document.getElementById('balance-hud');
 const statsEl = document.getElementById('stats');
 const betChips = document.getElementById('bet-chips');
 const sessionPanel = document.getElementById('session-panel');
@@ -61,6 +72,10 @@ let autoplaying = false;
 /** 1 = normal; 3 = FAST clicked mid-drop. */
 let animationSpeed = 1;
 let layout = createBoardLayout(canvas, GAME.rows);
+const replayMode = isReplayMode();
+/** @type {object | null} */
+let replayRound = null;
+let lastReplayUrl = '';
 
 function resizeCanvas() {
   const rect = canvas.parentElement.getBoundingClientRect();
@@ -99,8 +114,24 @@ function syncSessionHud() {
   sessionAvgReturnEl.textContent = `${sessionAvgReturnPercent(session).toFixed(2)}%`;
 }
 
+function setPlayModeUi() {
+  replayBanner.hidden = true;
+  playControls.hidden = false;
+  replayControls.hidden = true;
+  balanceHud.hidden = false;
+}
+
+function setReplayModeUi() {
+  replayBanner.hidden = false;
+  playControls.hidden = true;
+  replayControls.hidden = false;
+  balanceHud.hidden = true;
+  sessionPanel.hidden = true;
+  copyReplayBtn.hidden = true;
+}
+
 function syncHud() {
-  balanceEl.textContent = formatMoney(balance);
+  balanceEl.textContent = replayMode ? '—' : formatMoney(balance);
   betEl.textContent = formatMoney(bet);
   const risePx = bounceRisePx(layout, TIMING.bouncePop).toFixed(0);
   statsEl.textContent = `${GAME.rows} rows · max ${formatMult(GAME.maxWinMult)} · bounce ${risePx}px · RTP ${GAME.targetRtpPercent}%`;
@@ -137,9 +168,15 @@ function scaledSleep(ms) {
 }
 
 function syncControls() {
+  if (replayMode) {
+    replayAgainBtn.disabled = dropping || !replayRound;
+    return;
+  }
+
   const busy = dropping || autoplaying;
   autoplayBtn.disabled = busy || !rgsReady;
   newSessionBtn.disabled = busy;
+  copyReplayBtn.disabled = busy || !lastReplayUrl;
 
   for (const chip of betChips.querySelectorAll('button')) {
     chip.disabled = busy;
@@ -253,12 +290,51 @@ async function executeDrop({ animate = true } = {}) {
   saveSession(session);
   syncSessionHud();
 
+  const replayEvent = endRes.replayEvent || `${getSessionID()}-${round.roundID}`;
+  lastReplayUrl = buildReplayUrl({
+    event: replayEvent,
+    amountApi: round.amount,
+    mode: 'base',
+  });
+  copyReplayBtn.hidden = false;
+  syncControls();
+
   return {
     bucket: drop.bucket,
     multiplier,
     payout,
     profit: payout - bet,
+    replayEvent,
   };
+}
+
+async function playReplayAnimation(round, { showIntro = true } = {}) {
+  const drop = parsePlinkoDrop(round);
+  const multiplier = roundPayoutMultiplier(round);
+  bet = apiToDisplay(round.amount);
+  const payout = apiToDisplay(round.payout);
+  syncHud();
+
+  dropping = true;
+  animationSpeed = 1;
+  syncControls();
+
+  try {
+    if (showIntro) {
+      setMessage('Replaying round…');
+    }
+    await animateDrop(drop.bucket, drop.path);
+    const profit = payout - bet;
+    setResultMessage(
+      { bucket: drop.bucket, multiplier },
+      payout,
+      profit,
+    );
+    setMessage(`Replay — bucket #${drop.bucket}, ${formatMult(multiplier)} on ${formatMoney(bet)}.`);
+  } finally {
+    dropping = false;
+    syncControls();
+  }
 }
 
 async function onDrop() {
@@ -376,33 +452,93 @@ async function onNewSession() {
   }
 }
 
+async function onCopyReplayLink() {
+  if (!lastReplayUrl) return;
+  try {
+    await navigator.clipboard.writeText(lastReplayUrl);
+    setMessage('Replay link copied.');
+  } catch {
+    setMessage('Could not copy — select the URL from the address bar after opening replay.');
+  }
+}
+
+async function onReplayAgain() {
+  if (!replayRound || dropping) return;
+  await playReplayAnimation(replayRound, { showIntro: false });
+}
+
+async function bootstrapReplay() {
+  setReplayModeUi();
+  const params = getReplayParams();
+  if (!params.event) {
+    setMessage('Replay URL missing event parameter.');
+    return;
+  }
+
+  setMessage('Loading replay…');
+  try {
+    const data = await requestReplay({
+      game: params.game,
+      version: params.version,
+      mode: params.mode,
+      event: params.event,
+      amountApi: params.amountApi,
+    });
+    replayRound = data.round;
+    rgsReady = true;
+    syncControls();
+    syncHud();
+    await playReplayAnimation(replayRound);
+  } catch (err) {
+    console.error(err);
+    if (String(err.message) === 'ERR_BNF') {
+      setMessage('Replay not found — server may have restarted (replays are in-memory on the prototype).');
+    } else {
+      setMessage(`Replay failed — ${err.message}`);
+    }
+  }
+}
+
+function bootstrapPlay() {
+  setPlayModeUi();
+  setMessage('Connecting to RGS…');
+  syncControls();
+
+  authenticate()
+    .then((data) => {
+      applyBalance(data.balance);
+      if (data.config?.betLevels?.length) {
+        betOptions = data.config.betLevels.map(apiToDisplay);
+        bet = apiToDisplay(data.config.defaultBetLevel ?? displayToApi(DEFAULT_BET));
+        if (!betOptions.includes(bet)) {
+          bet = betOptions[0];
+        }
+        renderBetChips();
+      }
+      rgsReady = true;
+      syncControls();
+      syncHud();
+      setMessage('Set bet · press Drop.');
+    })
+    .catch((err) => {
+      console.error(err);
+      setMessage('RGS unavailable — run: node server.mjs');
+    });
+}
+
 autoplayBtn.addEventListener('click', onAutoplay100);
 newSessionBtn.addEventListener('click', onNewSession);
+copyReplayBtn.addEventListener('click', onCopyReplayLink);
+replayAgainBtn.addEventListener('click', onReplayAgain);
 window.addEventListener('resize', resizeCanvas);
 
 renderBetChips();
 resizeCanvas();
 syncHud();
-setMessage('Connecting to RGS…');
 syncControls();
 
-authenticate()
-  .then((data) => {
-    applyBalance(data.balance);
-    if (data.config?.betLevels?.length) {
-      betOptions = data.config.betLevels.map(apiToDisplay);
-      bet = apiToDisplay(data.config.defaultBetLevel ?? displayToApi(DEFAULT_BET));
-      if (!betOptions.includes(bet)) {
-        bet = betOptions[0];
-      }
-      renderBetChips();
-    }
-    rgsReady = true;
-    syncControls();
-    syncHud();
-    setMessage('Set bet · press Drop.');
-  })
-  .catch((err) => {
-    console.error(err);
-    setMessage('RGS unavailable — run: node server.mjs');
-  });
+if (replayMode) {
+  bootstrapReplay();
+} else {
+  bootstrapPlay();
+}

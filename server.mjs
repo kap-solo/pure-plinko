@@ -7,7 +7,7 @@ import http from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { handleRgsRequest } from './server/rgs-engine.mjs';
+import { handleRgsRequest, handleReplayRequest } from './server/rgs-engine.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 5174;
@@ -25,6 +25,19 @@ const MIME = {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host}`);
+
+  if (req.method === 'GET' && url.pathname.startsWith('/bet/replay/')) {
+    const parts = url.pathname.split('/').filter(Boolean);
+    const game = parts[2];
+    const version = parts[3];
+    const mode = parts[4];
+    const event = parts.slice(5).join('/');
+    const result = handleReplayRequest(game, version, mode, decodeURIComponent(event), url.searchParams.get('amount'));
+    const status = result.error ? (result.error.code === 'ERR_BNF' ? 404 : 400) : 200;
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
+    return;
+  }
 
   if (req.method === 'POST' && url.pathname.startsWith('/wallet/')) {
     let body = '';

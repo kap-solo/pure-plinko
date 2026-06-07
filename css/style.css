@@ -198,6 +198,36 @@ h1 {
   cursor: not-allowed;
 }
 
+.replay-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #3d2a14;
+  background: #1a1208;
+  font-size: 0.78rem;
+}
+
+.replay-label {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fbbf24;
+}
+
+.replay-note {
+  color: #c5a56a;
+}
+
+.copy-replay-btn {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.72rem;
+}
+
 .stats {
   margin-top: 1rem;
   text-align: center;

@@ -13,7 +13,12 @@
         <p class="subtitle">Working title · one drop, one result</p>
       </header>
 
-      <section class="hud" aria-label="Balance">
+      <div id="replay-banner" class="replay-banner" hidden>
+        <span class="replay-label">Replay</span>
+        <span class="replay-note">Recorded round — not a live bet</span>
+      </div>
+
+      <section class="hud" id="balance-hud" aria-label="Balance">
         <div class="stat">
           <span class="label">Balance</span>
           <span class="value" id="balance">$0.00</span>
@@ -53,13 +58,20 @@
 
       <p class="message" id="message">Set bet · press Drop.</p>
 
-      <div class="controls">
+      <div class="controls" id="play-controls">
         <div class="bet-row" id="bet-chips" aria-label="Bet amount"></div>
         <button id="drop-btn" type="button">Drop</button>
         <div class="test-row">
           <button id="autoplay-btn" type="button" class="test-btn">100 play</button>
           <button id="new-session-btn" type="button" class="test-btn">New session</button>
         </div>
+        <button id="copy-replay-btn" type="button" class="test-btn copy-replay-btn" hidden>
+          Copy replay link
+        </button>
+      </div>
+
+      <div class="controls" id="replay-controls" hidden>
+        <button id="replay-again-btn" type="button" class="test-btn">Replay again</button>
       </div>
 
       <p class="stats" id="stats"></p>
