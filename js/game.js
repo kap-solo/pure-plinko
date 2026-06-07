@@ -3,42 +3,25 @@
  * Stake compliance runs on Suki Engine (@kap-solo/suki-engine).
  */
 
-import { initSuki } from '@kap-solo/suki-engine/client/suki/config.js';
 import { apiToDisplay, displayToApi } from '@kap-solo/suki-engine/client/money.js';
 import {
   authenticate,
   buildReplayUrl,
   classifyRgsError,
+  createGameBootstrap,
   getReplayParams,
   getSessionID,
   isReplayMode,
   messageForRgsCode,
   requestReplay,
-  showDevTools,
-  showComplianceFooter,
-  getRgsConnectionInfo,
   startNewRgsSession,
-  getDevComplianceLabel,
-  getJurisdictionProfileName,
-  parseAuthResponse,
-  createControlPolicy,
-  applyProductionShell,
 } from '@kap-solo/suki-engine/client/rgs.js';
-import { createJurisdictionController } from '@kap-solo/suki-engine/client/suki/jurisdiction.js';
-import { createSukiLifecycle } from '@kap-solo/suki-engine/client/suki/lifecycle.js';
-import { bootstrapPlayMode, attachBalanceRefresh } from '@kap-solo/suki-engine/client/suki/bootstrap.js';
 import { BET_OPTIONS, DEFAULT_BET, GAME, PAYTABLE, TIMING } from './config.js';
 import { buildPlinkoSettledResult, parsePlinkoDrop } from './plinko/round.js';
 import { ensureSession, loadSession, recordPlay, resetSession, saveSession, sessionAvgReturnPercent } from './session.js';
 import { formatMoney, formatMult } from './math.js';
 import { ballRadii, bounceRisePx, rowDurationMs, sampleRowMotion } from './physics.js';
 import { bucketCenterX, createBoardLayout, drawBall, drawBoard } from './render.js';
-
-initSuki({
-  gameId: 'pure-plinko',
-  replayVersion: '1',
-  sessionStorageKey: 'purePlinko.rgsSessionID',
-});
 
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
@@ -60,16 +43,6 @@ const complianceDevEl = document.getElementById('compliance-dev');
 const principlesAside = document.querySelector('.principles');
 const testControlsRow = document.querySelector('.test-row');
 
-applyProductionShell({
-  elements: {
-    complianceDev: complianceDevEl,
-    testControls: testControlsRow,
-    copyReplay: copyReplayBtn,
-    autoplay: autoplayBtn,
-    newSession: newSessionBtn,
-    devAside: principlesAside,
-  },
-});
 const betChips = document.getElementById('bet-chips');
 const sessionPanel = document.getElementById('session-panel');
 const sessionPlaysEl = document.getElementById('session-plays');
@@ -84,7 +57,6 @@ let balance = 0;
 let bet = DEFAULT_BET;
 /** @type {number[]} */
 let betOptions = [...BET_OPTIONS];
-let rgsReady = false;
 let dropping = false;
 let autoplaying = false;
 let animationSpeed = 1;
@@ -93,76 +65,116 @@ const replayMode = isReplayMode();
 /** @type {object | null} */
 let replayRound = null;
 let lastReplayUrl = '';
-const devMode = showDevTools();
 
-const jurisdictionCtrl = createJurisdictionController(() => {
-  syncDevTools();
-  syncControls();
-  syncHud();
-});
-const controls = createControlPolicy(jurisdictionCtrl);
+function setMessage(text) {
+  messageEl.textContent = text;
+}
 
-const lifecycle = createSukiLifecycle({
-  jurisdiction: jurisdictionCtrl,
-  handlers: {
-    plinkoDrop: async (event, { animate }) => {
-      if (animate) {
-        await animateDrop(event.bucket, event.path);
-      } else {
-        drawBoard(ctx, layout, PAYTABLE, event.bucket);
+const game = createGameBootstrap({
+  suki: {
+    gameId: 'pure-plinko',
+    replayVersion: '1',
+    sessionStorageKey: 'purePlinko.rgsSessionID',
+  },
+  shell: {
+    elements: {
+      complianceDev: complianceDevEl,
+      testControls: testControlsRow,
+      copyReplay: copyReplayBtn,
+      autoplay: autoplayBtn,
+      newSession: newSessionBtn,
+      devAside: principlesAside,
+    },
+  },
+  lifecycle: {
+    handlers: {
+      plinkoDrop: async (event, { animate }) => {
+        if (animate) {
+          await animateDrop(event.bucket, event.path);
+        } else {
+          drawBoard(ctx, layout, PAYTABLE, event.bucket);
+        }
+      },
+      setTotalWin: async () => {},
+      finalWin: async () => {},
+    },
+    onResumeStatic: (round) => {
+      const drop = parsePlinkoDrop(round);
+      drawBoard(ctx, layout, PAYTABLE, drop.bucket);
+    },
+    onStaticRound: (round) => {
+      const drop = parsePlinkoDrop(round);
+      drawBoard(ctx, layout, PAYTABLE, drop.bucket);
+    },
+    applyBalance: (balanceObj) => {
+      balance = apiToDisplay(balanceObj.amount);
+    },
+    buildSettledResult: buildPlinkoSettledResult,
+    playingMessage: 'Dropping…',
+    onRoundSettled: (round, result, { recordSession }) => {
+      const payout = apiToDisplay(result.payoutApi);
+      const betDisplay = apiToDisplay(round.amount);
+      bet = betDisplay;
+      syncHud();
+
+      if (recordSession) {
+        session = ensureSession(session);
+        recordPlay(session, { bet: betDisplay, payout, multiplier: result.multiplier });
+        saveSession(session);
+        syncSessionHud();
+      }
+
+      const replayEvent = result.replayEvent || `${getSessionID()}-${round.roundID}`;
+      lastReplayUrl = buildReplayUrl({
+        event: replayEvent,
+        amountApi: round.amount,
+        mode: 'base',
+      });
+      copyReplayBtn.hidden = false;
+      syncControls();
+
+      displayRoundResult({
+        bucket: result.bucket,
+        multiplier: result.multiplier,
+        payout,
+        profit: payout - betDisplay,
+      });
+    },
+    setMessage,
+    getBetApi: () => displayToApi(bet),
+    setBetFromApi: (amountApi) => {
+      bet = apiToDisplay(amountApi);
+    },
+  },
+  auth: {
+    defaultBetDisplay: DEFAULT_BET,
+    onConfigured(auth) {
+      if (auth.balanceDisplay != null) {
+        balance = auth.balanceDisplay;
+      }
+      if (auth.betLevelsDisplay.length) {
+        betOptions = auth.betLevelsDisplay;
+        bet = auth.defaultBetDisplay ?? betOptions[0];
+        renderBetChips();
       }
     },
-    setTotalWin: async () => {},
-    finalWin: async () => {},
   },
-  onResumeStatic: (round) => {
-    const drop = parsePlinkoDrop(round);
-    drawBoard(ctx, layout, PAYTABLE, drop.bucket);
+  ui: {
+    setMessage,
+    syncHud,
+    isBusy: () => dropping || autoplaying,
+    onRgsReady: () => syncControls(),
+    onReady: () => syncHud(),
+    onAuthRound: handleAuthRoundOutcome,
   },
-  onStaticRound: (round) => {
-    const drop = parsePlinkoDrop(round);
-    drawBoard(ctx, layout, PAYTABLE, drop.bucket);
-  },
-  applyBalance: (balanceObj) => {
-    balance = apiToDisplay(balanceObj.amount);
-  },
-  buildSettledResult: buildPlinkoSettledResult,
-  playingMessage: 'Dropping…',
-  onRoundSettled: (round, result, { recordSession }) => {
-    const payout = apiToDisplay(result.payoutApi);
-    const betDisplay = apiToDisplay(round.amount);
-    bet = betDisplay;
-    syncHud();
-
-    if (recordSession) {
-      session = ensureSession(session);
-      recordPlay(session, { bet: betDisplay, payout, multiplier: result.multiplier });
-      saveSession(session);
-      syncSessionHud();
-    }
-
-    const replayEvent = result.replayEvent || `${getSessionID()}-${round.roundID}`;
-    lastReplayUrl = buildReplayUrl({
-      event: replayEvent,
-      amountApi: round.amount,
-      mode: 'base',
-    });
-    copyReplayBtn.hidden = false;
+  onJurisdictionChange: () => {
     syncControls();
-
-    displayRoundResult({
-      bucket: result.bucket,
-      multiplier: result.multiplier,
-      payout,
-      profit: payout - betDisplay,
-    });
+    syncHud();
   },
-  setMessage,
-  getBetApi: () => displayToApi(bet),
-  setBetFromApi: (amountApi) => {
-    bet = apiToDisplay(amountApi);
-  },
+  replay: { start: bootstrapReplay },
 });
+
+const { controls, lifecycle, applyAuthConfig, syncDevTools } = game;
 
 function resizeCanvas() {
   const rect = canvas.parentElement.getBoundingClientRect();
@@ -178,35 +190,6 @@ function formatSignedMoney(amount) {
   if (amount > 0) return `+${abs}`;
   if (amount < 0) return `-${abs}`;
   return formatMoney(0);
-}
-
-function applyAuthConfig(data) {
-  const auth = parseAuthResponse(data, { defaultBetDisplay: DEFAULT_BET });
-  if (auth.balanceDisplay != null) {
-    balance = auth.balanceDisplay;
-  }
-  if (auth.betLevelsDisplay.length) {
-    betOptions = auth.betLevelsDisplay;
-    bet = auth.defaultBetDisplay ?? betOptions[0];
-    renderBetChips();
-  }
-  jurisdictionCtrl.mergeFromServer(auth.jurisdiction);
-  if (devMode) {
-    jurisdictionCtrl.applyDevProfile(getJurisdictionProfileName());
-  }
-}
-
-function syncDevTools() {
-  if (replayMode) return;
-  controls.setVisible(autoplayBtn, controls.canAutoplay);
-  newSessionBtn.hidden = false;
-  if (complianceDevEl) {
-    complianceDevEl.hidden = !showComplianceFooter();
-    if (showComplianceFooter()) {
-      const conn = getRgsConnectionInfo();
-      complianceDevEl.textContent = `${conn.modeLabel} · ${conn.rgsUrl} · ${getDevComplianceLabel()}`;
-    }
-  }
 }
 
 function syncSessionHud() {
@@ -249,10 +232,6 @@ function syncHud() {
   const rtpPart = controls.showRtp ? ` · RTP ${GAME.targetRtpPercent}%` : '';
   statsEl.textContent = `${GAME.rows} rows · max ${formatMult(GAME.maxWinMult)} · bounce ${risePx}px${rtpPart}`;
   syncSessionHud();
-}
-
-function setMessage(text) {
-  messageEl.textContent = text;
 }
 
 function displayRoundResult({ bucket, multiplier, payout, profit }) {
@@ -310,7 +289,7 @@ function syncControls() {
   }
 
   const busy = dropping || autoplaying;
-  autoplayBtn.disabled = busy || !rgsReady || !controls.canAutoplay;
+  autoplayBtn.disabled = busy || !game.rgsReady || !controls.canAutoplay;
   newSessionBtn.disabled = busy;
   copyReplayBtn.disabled = busy || !lastReplayUrl;
 
@@ -318,7 +297,7 @@ function syncControls() {
     chip.disabled = busy;
   }
 
-  if (autoplaying || !rgsReady) {
+  if (autoplaying || !game.rgsReady) {
     dropBtn.textContent = 'Drop';
     dropBtn.classList.remove('fast');
     dropBtn.disabled = true;
@@ -406,7 +385,7 @@ async function withDropLock(fn) {
 
 async function onDrop() {
   if (dropping || autoplaying) return;
-  if (!rgsReady) {
+  if (!game.rgsReady) {
     setMessage('Connecting to RGS…');
     return;
   }
@@ -440,7 +419,7 @@ async function onDrop() {
 
 async function onAutoplay100() {
   if (dropping || autoplaying || !controls.canAutoplay) return;
-  if (!rgsReady || balance < bet) return;
+  if (!game.rgsReady || balance < bet) return;
 
   autoplaying = true;
   syncControls();
@@ -491,7 +470,7 @@ async function onNewSession() {
 
     const data = await authenticate();
     applyAuthConfig(data);
-    rgsReady = true;
+    game.setRgsReady(true);
     syncHud();
     const authOutcome = await lifecycle.handleAuthRound(data.round, {
       lastEvent: data.meta?.lastEvent,
@@ -501,7 +480,7 @@ async function onNewSession() {
     }
   } catch (err) {
     console.error(err);
-    rgsReady = false;
+    game.setRgsReady(false);
     setMessage(messageForRgsCode(String(err.message)));
   } finally {
     syncControls();
@@ -561,7 +540,7 @@ async function bootstrapReplay() {
       amountApi: params.amountApi,
     });
     replayRound = data.round;
-    rgsReady = true;
+    game.setRgsReady(true);
     syncControls();
     syncHud();
     await playReplayAnimation(replayRound);
@@ -589,21 +568,10 @@ replayAgainBtn.addEventListener('click', () => {
 window.addEventListener('resize', resizeCanvas);
 
 window.addEventListener('keydown', (e) => {
-  if (replayMode || !controls.canSpacebar || dropping || autoplaying || !rgsReady) return;
+  if (replayMode || !controls.canSpacebar || dropping || autoplaying || !game.rgsReady) return;
   if (e.code !== 'Space' || e.repeat) return;
   e.preventDefault();
   onDrop();
-});
-
-attachBalanceRefresh({
-  get rgsReady() {
-    return rgsReady;
-  },
-  isBusy: () => dropping || autoplaying,
-  applyBalance: (balanceObj) => {
-    balance = apiToDisplay(balanceObj.amount);
-  },
-  syncHud,
 });
 
 renderBetChips();
@@ -613,18 +581,4 @@ syncDevTools();
 syncHud();
 syncControls();
 
-if (replayMode) {
-  bootstrapReplay();
-} else {
-  bootstrapPlayMode({
-    applyAuthConfig,
-    lifecycle,
-    setMessage,
-    setRgsReady: (ready) => {
-      rgsReady = ready;
-      syncControls();
-    },
-    onReady: () => syncHud(),
-    onAuthRound: handleAuthRoundOutcome,
-  });
-}
+game.start();
