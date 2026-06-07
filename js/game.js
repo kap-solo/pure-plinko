@@ -19,7 +19,7 @@ import {
 import { BET_OPTIONS, DEFAULT_BET, GAME, PAYTABLE, TIMING } from './config.js';
 import { buildPlinkoSettledResult, parsePlinkoDrop } from './plinko/round.js';
 import { ensureSession, loadSession, recordPlay, resetSession, saveSession, sessionAvgReturnPercent } from './session.js';
-import { formatMoney, formatMult } from './math.js';
+import { formatMult } from './math.js';
 import { ballRadii, bounceRisePx, rowDurationMs, sampleRowMotion } from './physics.js';
 import { bucketCenterX, createBoardLayout, drawBall, drawBoard } from './render.js';
 
@@ -51,6 +51,12 @@ const sessionPlaysEl = document.getElementById('session-plays');
 const sessionPlEl = document.getElementById('session-pl');
 const sessionBestEl = document.getElementById('session-best');
 const sessionAvgReturnEl = document.getElementById('session-avg-return');
+const balanceLabelEl = document.getElementById('balance-label');
+const betLabelEl = document.getElementById('bet-label');
+const lastResultLabelEl = document.getElementById('last-result-label');
+const sessionPlaysLabelEl = document.getElementById('session-plays-label');
+const sessionPlLabelEl = document.getElementById('session-pl-label');
+const replayNoteEl = document.getElementById('replay-note');
 
 /** @type {object | null} */
 let session = loadSession();
@@ -88,6 +94,13 @@ const game = createGameBootstrap({
       devAside: principlesAside,
       sessionTimer: sessionTimerEl,
       sessionTimerContainer: sessionTimerStat,
+      balanceLabel: balanceLabelEl,
+      betLabel: betLabelEl,
+      lastResultLabel: lastResultLabelEl,
+      sessionPlaysLabel: sessionPlaysLabelEl,
+      sessionPlLabel: sessionPlLabelEl,
+      replayNote: replayNoteEl,
+      dropButton: dropBtn,
     },
   },
   lifecycle: {
@@ -168,7 +181,10 @@ const game = createGameBootstrap({
     syncHud,
     isBusy: () => dropping || autoplaying,
     onRgsReady: () => syncControls(),
-    onReady: () => syncHud(),
+    onReady: () => {
+      syncHud();
+      setMessage(copyTerm('setBetPrompt'));
+    },
     onAuthRound: handleAuthRoundOutcome,
   },
   onJurisdictionChange: () => {
@@ -180,6 +196,14 @@ const game = createGameBootstrap({
 
 const { controls, lifecycle, applyAuthConfig, syncDevTools } = game;
 
+function fmt(amount) {
+  return game.formatCurrency(amount);
+}
+
+function copyTerm(key) {
+  return game.copy.term(key);
+}
+
 function resizeCanvas() {
   const rect = canvas.parentElement.getBoundingClientRect();
   const size = Math.min(rect.width, 520);
@@ -190,10 +214,10 @@ function resizeCanvas() {
 }
 
 function formatSignedMoney(amount) {
-  const abs = formatMoney(Math.abs(amount));
+  const abs = fmt(Math.abs(amount));
   if (amount > 0) return `+${abs}`;
   if (amount < 0) return `-${abs}`;
-  return formatMoney(0);
+  return fmt(0);
 }
 
 function syncSessionHud() {
@@ -208,7 +232,7 @@ function syncSessionHud() {
   sessionPlEl.classList.toggle('negative', session.netProfit < 0);
   sessionBestEl.textContent =
     session.highestWin > 0
-      ? `${formatMult(session.highestMultiplier)} (${formatMoney(session.highestWin)})`
+      ? `${formatMult(session.highestMultiplier)} (${fmt(session.highestWin)})`
       : '—';
   sessionAvgReturnEl.textContent = `${sessionAvgReturnPercent(session).toFixed(2)}%`;
 }
@@ -230,8 +254,8 @@ function setReplayModeUi() {
 }
 
 function syncHud() {
-  balanceEl.textContent = replayMode ? '—' : formatMoney(balance);
-  betEl.textContent = formatMoney(bet);
+  balanceEl.textContent = replayMode ? '—' : fmt(balance);
+  betEl.textContent = fmt(bet);
   const risePx = bounceRisePx(layout, TIMING.bouncePop).toFixed(0);
   const rtpPart = controls.showRtp ? ` · RTP ${GAME.targetRtpPercent}%` : '';
   statsEl.textContent = `${GAME.rows} rows · max ${formatMult(GAME.maxWinMult)} · bounce ${risePx}px${rtpPart}`;
@@ -239,13 +263,13 @@ function syncHud() {
 }
 
 function displayRoundResult({ bucket, multiplier, payout, profit }) {
-  resultEl.textContent = `${formatMult(multiplier)} → ${formatMoney(payout)}`;
+  resultEl.textContent = `${formatMult(multiplier)} → ${fmt(payout)}`;
   if (multiplier >= 1000) {
-    setMessage(`Jackpot bucket #${bucket} — ${formatMult(multiplier)} on ${formatMoney(bet)}.`);
+    setMessage(`Jackpot bucket #${bucket} — ${formatMult(multiplier)} ${copyTerm('onAmount')} ${fmt(bet)}.`);
   } else if (profit > 0) {
-    setMessage(`Bucket #${bucket} — won ${formatMoney(profit)}.`);
+    setMessage(`Bucket #${bucket} — ${copyTerm('won')} ${fmt(profit)}.`);
   } else if (payout === bet) {
-    setMessage(`Bucket #${bucket} — push, stake returned.`);
+    setMessage(`Bucket #${bucket} — ${copyTerm('stakeReturned')}.`);
   } else {
     setMessage(`Bucket #${bucket} — ${formatMult(multiplier)} return.`);
   }
@@ -267,7 +291,7 @@ function renderBetChips() {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = `chip${amount === bet ? ' active' : ''}`;
-    btn.textContent = formatMoney(amount);
+    btn.textContent = fmt(amount);
     btn.addEventListener('click', () => {
       if (dropping || autoplaying) return;
       bet = amount;
@@ -302,7 +326,7 @@ function syncControls() {
   }
 
   if (autoplaying || !game.rgsReady) {
-    dropBtn.textContent = 'Drop';
+    dropBtn.textContent = copyTerm('drop');
     dropBtn.classList.remove('fast');
     dropBtn.disabled = true;
     return;
@@ -314,14 +338,14 @@ function syncControls() {
       dropBtn.classList.add('fast');
       dropBtn.disabled = false;
     } else {
-      dropBtn.textContent = 'Drop';
+      dropBtn.textContent = copyTerm('drop');
       dropBtn.classList.remove('fast');
       dropBtn.disabled = true;
     }
     return;
   }
 
-  dropBtn.textContent = 'Drop';
+  dropBtn.textContent = copyTerm('drop');
   dropBtn.classList.remove('fast');
   dropBtn.disabled = false;
 }
@@ -390,11 +414,11 @@ async function withDropLock(fn) {
 async function onDrop() {
   if (dropping || autoplaying) return;
   if (!game.rgsReady) {
-    setMessage('Connecting to RGS…');
+    setMessage(copyTerm('connectingRgs'));
     return;
   }
   if (balance < bet) {
-    setMessage('Not enough balance.');
+    setMessage(copyTerm('insufficientBalance'));
     return;
   }
 
@@ -431,7 +455,7 @@ async function onAutoplay100() {
   try {
     for (let i = 0; i < 100; i += 1) {
       if (balance < bet) {
-        setMessage(`Autoplay stopped — insufficient balance after ${played} plays.`);
+        setMessage(`${copyTerm('autoplayStopped')} ${played} plays.`);
         break;
       }
       setMessage(`Autoplay ${i + 1}/100…`);
@@ -481,7 +505,7 @@ async function onNewSession() {
       lastEvent: data.meta?.lastEvent,
     });
     if (authOutcome.status === 'ready') {
-      setMessage(`New session — balance ${formatMoney(balance)}.`);
+      setMessage(`${copyTerm('newSessionBalance')} ${fmt(balance)}.`);
     }
   } catch (err) {
     console.error(err);
@@ -521,7 +545,7 @@ async function playReplayAnimation(round, { showIntro = true } = {}) {
       payout,
       profit: payout - bet,
     });
-    setMessage(`Replay — bucket #${drop.bucket}, ${formatMult(multiplier)} on ${formatMoney(bet)}.`);
+    setMessage(`Replay — bucket #${drop.bucket}, ${formatMult(multiplier)} ${copyTerm('onAmount')} ${fmt(bet)}.`);
   } finally {
     dropping = false;
     syncControls();

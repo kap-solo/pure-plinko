@@ -22,20 +22,20 @@
 
       <div id="replay-banner" class="replay-banner" hidden>
         <span class="replay-label">Replay</span>
-        <span class="replay-note">Recorded round — not a live bet</span>
+        <span class="replay-note" id="replay-note">Recorded round — not a live bet</span>
       </div>
 
       <section class="hud" id="balance-hud" aria-label="Balance">
         <div class="stat">
-          <span class="label">Balance</span>
+          <span class="label" id="balance-label">Balance</span>
           <span class="value" id="balance">$0.00</span>
         </div>
         <div class="stat">
-          <span class="label">Bet</span>
+          <span class="label" id="bet-label">Bet</span>
           <span class="value" id="bet-display">$1.00</span>
         </div>
         <div class="stat" style="grid-column: 1 / -1">
-          <span class="label">Last result</span>
+          <span class="label" id="last-result-label">Last result</span>
           <span class="value" id="last-result">—</span>
         </div>
         <div class="stat" id="session-timer-stat" hidden>
@@ -46,11 +46,11 @@
 
       <section class="hud session" id="session-panel" hidden aria-label="Session">
         <div class="stat">
-          <span class="label">Session plays</span>
+          <span class="label" id="session-plays-label">Session plays</span>
           <span class="value" id="session-plays">0</span>
         </div>
         <div class="stat">
-          <span class="label">Session P/L</span>
+          <span class="label" id="session-pl-label">Session P/L</span>
           <span class="value" id="session-pl">$0.00</span>
         </div>
         <div class="stat">
