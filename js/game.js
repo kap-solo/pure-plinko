@@ -18,6 +18,9 @@ import {
   startNewRgsSession,
   getDevComplianceLabel,
   getJurisdictionProfileName,
+  parseAuthResponse,
+  createControlPolicy,
+  applyProductionShell,
 } from '@kap-solo/suki-engine/client/rgs.js';
 import { createJurisdictionController } from '@kap-solo/suki-engine/client/suki/jurisdiction.js';
 import { createSukiLifecycle } from '@kap-solo/suki-engine/client/suki/lifecycle.js';
@@ -34,6 +37,7 @@ initSuki({
   replayVersion: '1',
   sessionStorageKey: 'purePlinko.rgsSessionID',
 });
+
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 const balanceEl = document.getElementById('balance');
@@ -51,6 +55,19 @@ const replayAgainBtn = document.getElementById('replay-again-btn');
 const balanceHud = document.getElementById('balance-hud');
 const statsEl = document.getElementById('stats');
 const complianceDevEl = document.getElementById('compliance-dev');
+const principlesAside = document.querySelector('.principles');
+const testControlsRow = document.querySelector('.test-row');
+
+applyProductionShell({
+  elements: {
+    complianceDev: complianceDevEl,
+    testControls: testControlsRow,
+    copyReplay: copyReplayBtn,
+    autoplay: autoplayBtn,
+    newSession: newSessionBtn,
+    devAside: principlesAside,
+  },
+});
 const betChips = document.getElementById('bet-chips');
 const sessionPanel = document.getElementById('session-panel');
 const sessionPlaysEl = document.getElementById('session-plays');
@@ -81,6 +98,7 @@ const jurisdictionCtrl = createJurisdictionController(() => {
   syncControls();
   syncHud();
 });
+const controls = createControlPolicy(jurisdictionCtrl);
 
 const lifecycle = createSukiLifecycle({
   jurisdiction: jurisdictionCtrl,
@@ -161,20 +179,16 @@ function formatSignedMoney(amount) {
 }
 
 function applyAuthConfig(data) {
-  if (data.balance) {
-    balance = apiToDisplay(data.balance.amount);
+  const auth = parseAuthResponse(data, { defaultBetDisplay: DEFAULT_BET });
+  if (auth.balanceDisplay != null) {
+    balance = auth.balanceDisplay;
   }
-  if (data.config?.betLevels?.length) {
-    betOptions = data.config.betLevels.map(apiToDisplay);
-    bet = apiToDisplay(data.config.defaultBetLevel ?? displayToApi(DEFAULT_BET));
-    if (!betOptions.includes(bet)) {
-      bet = betOptions[0];
-    }
+  if (auth.betLevelsDisplay.length) {
+    betOptions = auth.betLevelsDisplay;
+    bet = auth.defaultBetDisplay ?? betOptions[0];
     renderBetChips();
   }
-  if (data.config?.jurisdiction) {
-    jurisdictionCtrl.mergeFromServer(data.config.jurisdiction);
-  }
+  jurisdictionCtrl.mergeFromServer(auth.jurisdiction);
   if (devMode) {
     jurisdictionCtrl.applyDevProfile(getJurisdictionProfileName());
   }
@@ -182,7 +196,7 @@ function applyAuthConfig(data) {
 
 function syncDevTools() {
   if (replayMode) return;
-  autoplayBtn.hidden = !jurisdictionCtrl.autoplayAllowed;
+  controls.setVisible(autoplayBtn, controls.canAutoplay);
   newSessionBtn.hidden = false;
   if (complianceDevEl) {
     complianceDevEl.hidden = !devMode;
@@ -193,7 +207,7 @@ function syncDevTools() {
 }
 
 function syncSessionHud() {
-  if (!session || !jurisdictionCtrl.showNetPosition) {
+  if (!session || !controls.showNetPosition) {
     sessionPanel.hidden = true;
     return;
   }
@@ -229,7 +243,7 @@ function syncHud() {
   balanceEl.textContent = replayMode ? '—' : formatMoney(balance);
   betEl.textContent = formatMoney(bet);
   const risePx = bounceRisePx(layout, TIMING.bouncePop).toFixed(0);
-  const rtpPart = jurisdictionCtrl.showRtp ? ` · RTP ${GAME.targetRtpPercent}%` : '';
+  const rtpPart = controls.showRtp ? ` · RTP ${GAME.targetRtpPercent}%` : '';
   statsEl.textContent = `${GAME.rows} rows · max ${formatMult(GAME.maxWinMult)} · bounce ${risePx}px${rtpPart}`;
   syncSessionHud();
 }
@@ -293,7 +307,7 @@ function syncControls() {
   }
 
   const busy = dropping || autoplaying;
-  autoplayBtn.disabled = busy || !rgsReady || !jurisdictionCtrl.autoplayAllowed;
+  autoplayBtn.disabled = busy || !rgsReady || !controls.canAutoplay;
   newSessionBtn.disabled = busy;
   copyReplayBtn.disabled = busy || !lastReplayUrl;
 
@@ -309,7 +323,7 @@ function syncControls() {
   }
 
   if (dropping) {
-    if (jurisdictionCtrl.turboAllowed) {
+    if (controls.canTurbo) {
       dropBtn.textContent = 'Fast';
       dropBtn.classList.add('fast');
       dropBtn.disabled = false;
@@ -422,7 +436,7 @@ async function onDrop() {
 }
 
 async function onAutoplay100() {
-  if (dropping || autoplaying || !jurisdictionCtrl.autoplayAllowed) return;
+  if (dropping || autoplaying || !controls.canAutoplay) return;
   if (!rgsReady || balance < bet) return;
 
   autoplaying = true;
@@ -452,7 +466,7 @@ async function onAutoplay100() {
 }
 
 dropBtn.addEventListener('click', () => {
-  if (dropping && jurisdictionCtrl.turboAllowed) {
+  if (dropping && controls.canTurbo) {
     animationSpeed = 3;
     dropBtn.disabled = true;
     return;
@@ -572,7 +586,7 @@ replayAgainBtn.addEventListener('click', () => {
 window.addEventListener('resize', resizeCanvas);
 
 window.addEventListener('keydown', (e) => {
-  if (replayMode || !jurisdictionCtrl.spacebarAllowed || dropping || autoplaying || !rgsReady) return;
+  if (replayMode || !controls.canSpacebar || dropping || autoplaying || !rgsReady) return;
   if (e.code !== 'Space' || e.repeat) return;
   e.preventDefault();
   onDrop();

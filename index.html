@@ -68,11 +68,11 @@
       <div class="controls" id="play-controls">
         <div class="bet-row" id="bet-chips" aria-label="Bet amount"></div>
         <button id="drop-btn" type="button">Drop</button>
-        <div class="test-row">
+        <div class="test-row" data-suki-dev>
           <button id="autoplay-btn" type="button" class="test-btn">100 play</button>
           <button id="new-session-btn" type="button" class="test-btn">New session</button>
         </div>
-        <button id="copy-replay-btn" type="button" class="test-btn copy-replay-btn" hidden>
+        <button id="copy-replay-btn" type="button" class="test-btn copy-replay-btn" data-suki-dev hidden>
           Copy replay link
         </button>
       </div>
@@ -82,9 +82,9 @@
       </div>
 
       <p class="stats" id="stats"></p>
-      <p class="compliance-dev" id="compliance-dev" hidden></p>
+      <p class="compliance-dev" id="compliance-dev" data-suki-dev hidden></p>
 
-      <aside class="principles">
+      <aside class="principles" data-suki-dev>
         <strong>What “pure” means here</strong>
         <ul>
           <li>One action: <strong>Drop</strong> — no risk sliders, no row picker.</li>
