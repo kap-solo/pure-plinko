@@ -145,7 +145,7 @@ const game = createGameBootstrap({
       lastReplayUrl = buildReplayUrl({
         event: replayEvent,
         amountApi: round.amount,
-        mode: 'base',
+        mode: game.betModes.replayModeKey(),
       });
       copyReplayBtn.hidden = false;
       syncControls();
@@ -165,6 +165,7 @@ const game = createGameBootstrap({
   },
   auth: {
     defaultBetDisplay: DEFAULT_BET,
+    gameModes: [{ name: 'base', cost: 1 }],
     onConfigured(auth) {
       if (auth.balanceDisplay != null) {
         balance = auth.balanceDisplay;
