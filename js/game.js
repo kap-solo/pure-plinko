@@ -15,6 +15,8 @@ import {
   messageForRgsCode,
   requestReplay,
   showDevTools,
+  showComplianceFooter,
+  getRgsConnectionInfo,
   startNewRgsSession,
   getDevComplianceLabel,
   getJurisdictionProfileName,
@@ -199,9 +201,10 @@ function syncDevTools() {
   controls.setVisible(autoplayBtn, controls.canAutoplay);
   newSessionBtn.hidden = false;
   if (complianceDevEl) {
-    complianceDevEl.hidden = !devMode;
-    if (devMode) {
-      complianceDevEl.textContent = `Compliance dev · ${getDevComplianceLabel()}`;
+    complianceDevEl.hidden = !showComplianceFooter();
+    if (showComplianceFooter()) {
+      const conn = getRgsConnectionInfo();
+      complianceDevEl.textContent = `${conn.modeLabel} · ${conn.rgsUrl} · ${getDevComplianceLabel()}`;
     }
   }
 }
