@@ -12,6 +12,7 @@ import {
   createBetUi,
   createGameBootstrap,
   createGameMenu,
+  createGamePreloader,
   createModalHost,
   createRecentResultsStore,
   getReplayParams,
@@ -616,9 +617,21 @@ window.addEventListener('keydown', (e) => {
 
 betUi.renderBetLevels();
 resizeCanvas();
-setPlayModeUi();
 syncDevTools();
 syncHud();
 syncControls();
 
-game.start();
+if (replayMode) {
+  setReplayModeUi();
+  game.start();
+} else {
+  setPlayModeUi();
+  createGamePreloader({
+    shell: shellEl,
+    brand: 'SUKI engine',
+    subtitle: GAME.title,
+    hint: 'Tap anywhere to play',
+    assets: [],
+    onContinue: () => game.start(),
+  });
+}
