@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lightning Plinko — effect preview</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 1.25rem;
+        background: #121212;
+        color: #e8edf4;
+        font-family: system-ui, sans-serif;
+      }
+      .wrap {
+        width: min(520px, 100%);
+      }
+      h1 {
+        margin: 0 0 0.25rem;
+        font-size: 1.1rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #f0f0f0;
+      }
+      p.lead {
+        margin: 0 0 1rem;
+        color: #8a8a8a;
+        font-size: 0.85rem;
+        line-height: 1.45;
+      }
+      .stage {
+        background: #0a0c10;
+        border: 1px solid #2a3340;
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .stage-layers {
+        position: relative;
+        line-height: 0;
+      }
+      .stage-layers canvas {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      #fx {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+      .controls {
+        display: flex;
+        gap: 0.6rem;
+        margin-top: 0.85rem;
+        flex-wrap: wrap;
+      }
+      button {
+        border: 1px solid #3d4a5c;
+        background: #1a2330;
+        color: #e8edf4;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) {
+        background: #243044;
+        border-color: #e85d04;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: wait;
+      }
+      #strike-1-btn,
+      #strike-2-btn,
+      #strike-3-btn {
+        background: #2a1808;
+        border-color: #e85d04;
+        color: #ffd8b0;
+      }
+      #status {
+        margin: 0.75rem 0 0;
+        font-size: 0.82rem;
+        color: #9aa8bc;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Lightning preview</h1>
+      <p class="lead">
+        Random path each click — one blue bolt, or 2–3 back-to-back blue strikes.
+        No RGS.
+      </p>
+      <div class="stage">
+        <div class="stage-layers">
+          <canvas id="board" width="480" height="552" aria-label="Plinko board"></canvas>
+          <canvas id="fx" width="480" height="552" aria-hidden="true"></canvas>
+        </div>
+      </div>
+      <div class="controls">
+        <button type="button" id="strike-1-btn">1 Strike</button>
+        <button type="button" id="strike-2-btn">2 Strikes</button>
+        <button type="button" id="strike-3-btn">3 Strikes</button>
+      </div>
+      <p id="status">Loading…</p>
+    </div>
+    <script type="module" src="./lightning-preview.js"></script>
+  </body>
+</html>

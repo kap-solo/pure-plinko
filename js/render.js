@@ -20,7 +20,7 @@ function xStep(layout) {
   return layout.boardW / (layout.rows + 1);
 }
 
-/** Slot coordinate → x; matches peg centres (offset + col + 0.5). */
+/** Fractional animation slot → x (ball path); bucket columns use bucketCenterX(). */
 export function slotToX(layout, slot) {
   return layout.padX + xStep(layout) * (slot + 0.5);
 }
@@ -39,8 +39,10 @@ export function pegPosition(layout, row, col) {
   return { x, y };
 }
 
+/** Align with the bottom peg row (slotToX is for animation slots, offset by half a step). */
 export function bucketCenterX(layout, bucketIndex) {
-  return slotToX(layout, bucketIndex);
+  const lastRow = layout.rows - 1;
+  return pegPosition(layout, lastRow, bucketIndex).x;
 }
 
 /** Green at outer buckets → red at centre (symmetric). */

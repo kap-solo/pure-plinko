@@ -15,11 +15,13 @@ import {
   createGamePreloader,
   createModalHost,
   createRecentResultsStore,
+  formatReplayStartSummary,
   getReplayParams,
   getSessionID,
   isReplayMode,
   messageForRgsCode,
   requestReplay,
+  roundPayoutMultiplier,
   startNewRgsSession,
 } from '@kap-solo/suki-engine/client/rgs.js';
 import { BET_OPTIONS, DEFAULT_BET, GAME, PAYTABLE, TIMING } from './config.js';
@@ -161,6 +163,7 @@ const game = createGameBootstrap({
         event: replayEvent,
         amountApi: round.amount,
         mode: game.betModes.replayModeKey(),
+        lang: game.copy.lang,
       });
       betUi.setLastReplayUrl(lastReplayUrl);
       syncControls();
@@ -438,13 +441,19 @@ async function withDropLock(fn) {
   }
 }
 
+function playCostDisplay() {
+  const baseApi = displayToApi(bet);
+  const playApi = game.betModes.playAmountApi(baseApi);
+  return apiToDisplay(playApi);
+}
+
 async function onDrop() {
   if (dropping || autoplaying) return;
   if (!game.rgsReady) {
     setMessage(copyTerm('connectingRgs'));
     return;
   }
-  if (balance < bet) {
+  if (balance < playCostDisplay()) {
     setMessage(copyTerm('insufficientBalance'));
     return;
   }
@@ -454,7 +463,7 @@ async function onDrop() {
       await lifecycle.executeDrop({ animate: true });
     } catch (err) {
       console.error(err);
-      const policy = classifyRgsError(String(err.message));
+      const policy = classifyRgsError(String(err.message), { copy: game.copy });
       if (policy.shouldResumeRound) {
         try {
           const data = await authenticate();
@@ -474,14 +483,14 @@ async function onDrop() {
 
 async function onAutoplay100() {
   if (dropping || autoplaying || !controls.canAutoplay) return;
-  if (!game.rgsReady || balance < bet) return;
+  if (!game.rgsReady || balance < playCostDisplay()) return;
 
   autoplaying = true;
   syncControls();
   let played = 0;
   try {
     for (let i = 0; i < 100; i += 1) {
-      if (balance < bet) {
+      if (balance < playCostDisplay()) {
         setMessage(`${copyTerm('autoplayStopped')} ${played} plays.`);
         break;
       }
@@ -495,7 +504,7 @@ async function onAutoplay100() {
     }
   } catch (err) {
     console.error(err);
-    setMessage(messageForRgsCode(String(err.message)));
+    setMessage(messageForRgsCode(String(err.message), { copy: game.copy }));
   } finally {
     autoplaying = false;
     syncControls();
@@ -528,7 +537,7 @@ async function onNewSession() {
   } catch (err) {
     console.error(err);
     game.setRgsReady(false);
-    setMessage(messageForRgsCode(String(err.message)));
+    setMessage(messageForRgsCode(String(err.message), { copy: game.copy }));
   } finally {
     syncControls();
   }
@@ -546,7 +555,7 @@ async function onCopyReplayLink() {
 
 async function playReplayAnimation(round, { showIntro = true } = {}) {
   const drop = parsePlinkoDrop(round);
-  const multiplier = round.payoutMultiplier ?? (round.payout / Math.max(1, round.amount));
+  const multiplier = roundPayoutMultiplier(round);
   bet = apiToDisplay(round.amount);
   const payout = apiToDisplay(round.payout);
   syncHud();
@@ -555,7 +564,16 @@ async function playReplayAnimation(round, { showIntro = true } = {}) {
   animationSpeed = 1;
   syncControls();
   try {
-    if (showIntro) setMessage('Replaying round…');
+    if (showIntro) {
+      setMessage(
+        formatReplayStartSummary(
+          game.copy,
+          { playAmount: bet, payoutMultiplier: multiplier, finalAmount: payout },
+          { formatCurrency: fmt, formatMult },
+        ),
+      );
+      await sleep(1200);
+    }
     await animateDrop(drop.bucket, drop.path);
     displayRoundResult({
       bucket: drop.bucket,
@@ -563,7 +581,7 @@ async function playReplayAnimation(round, { showIntro = true } = {}) {
       payout,
       profit: payout - bet,
     });
-    setMessage(`Replay — bucket #${drop.bucket}, ${formatMult(multiplier)} ${copyTerm('onAmount')} ${fmt(bet)}.`);
+    setMessage(copyTerm('replayingRound'));
   } finally {
     dropping = false;
     syncControls();
@@ -577,7 +595,7 @@ async function bootstrapReplay() {
     setMessage('Replay URL missing event parameter.');
     return;
   }
-  setMessage('Loading replay…');
+  setMessage(copyTerm('loadingReplay'));
   try {
     const data = await requestReplay({
       game: params.game,
@@ -593,7 +611,7 @@ async function bootstrapReplay() {
     await playReplayAnimation(replayRound);
   } catch (err) {
     console.error(err);
-    setMessage(messageForRgsCode(String(err.message)));
+    setMessage(messageForRgsCode(String(err.message), { copy: game.copy }));
   }
 }
 
