@@ -8,7 +8,7 @@
     "test:integration": "node scripts/integration-smoke.mjs"
   },
   "dependencies": {
-    "@kap-solo/suki-engine": "github:kap-solo/suki-engine#bf776db"
+    "@kap-solo/suki-engine": "github:kap-solo/suki-engine#7fa7fb3"
   },
   "engines": {
     "node": ">=20"

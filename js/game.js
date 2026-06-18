@@ -249,16 +249,24 @@ betUi.bind({
   getPlaying: () => dropping,
   getAutoplaying: () => autoplaying,
   getPlayLabel: () => copyTerm('drop'),
-  onBetChange: syncHud,
+  getPlayCost: playCostDisplay,
+  getBalance: () => balance,
+  onBetChange: () => {
+    syncHud();
+    syncControls();
+  },
   onDismissOverlays: () => {
     gameMenu.close();
     modalHost.close();
   },
+  modalHost,
+  getCopyTerm: copyTerm,
+  formatCurrency: (amount) => game.formatCurrency(amount),
   onPlay: onDrop,
   onTurbo: () => {
     animationSpeed = 3;
   },
-  onAutoplay: onAutoplay100,
+  onAutoplay: runAutoplay,
   onNewSession: onNewSession,
   onCopyReplay: onCopyReplayLink,
   onReplayAgain: () => {
@@ -270,8 +278,8 @@ function fmt(amount) {
   return game.formatCurrency(amount);
 }
 
-function copyTerm(key) {
-  return game.copy.term(key);
+function copyTerm(key, vars) {
+  return game.copy.t(key, vars);
 }
 
 const BOARD_ASPECT = 1 / 1.35;
@@ -481,7 +489,7 @@ async function onDrop() {
   });
 }
 
-async function onAutoplay100() {
+async function runAutoplay(roundCount) {
   if (dropping || autoplaying || !controls.canAutoplay) return;
   if (!game.rgsReady || balance < playCostDisplay()) return;
 
@@ -489,18 +497,18 @@ async function onAutoplay100() {
   syncControls();
   let played = 0;
   try {
-    for (let i = 0; i < 100; i += 1) {
+    for (let i = 0; i < roundCount; i += 1) {
       if (balance < playCostDisplay()) {
         setMessage(`${copyTerm('autoplayStopped')} ${played} plays.`);
         break;
       }
-      setMessage(`Autoplay ${i + 1}/100…`);
+      setMessage(copyTerm('autoplayProgress', { current: i + 1, total: roundCount }));
       await lifecycle.executeDrop({ animate: false });
       played += 1;
       await sleep(0);
     }
-    if (played === 100) {
-      setMessage('Autoplay complete — 100 plays.');
+    if (played === roundCount) {
+      setMessage(copyTerm('autoplayComplete', { count: roundCount }));
     }
   } catch (err) {
     console.error(err);
