@@ -64,6 +64,16 @@ export function createPlinkoMockRgs() {
   return createMockRgs({
     gameId: GAME_ID,
     replayVersion: REPLAY_VERSION,
+    betConfig: {
+      minBet: API_MULT / 2,
+      maxBet: 50 * API_MULT,
+      stepBet: API_MULT / 2,
+      defaultBetLevel: 2 * API_MULT,
+      betLevels: [0.5, 1, 2, 5, 10, 20].map((d) => Math.round(d * API_MULT)),
+      betModes: {
+        BASE: { mode: 'BASE', costMultiplier: 1, feature: false },
+      },
+    },
     resolvePlay(_session, body) {
       const amount = Number(body.amount);
       const simId = pickSimulationId();
