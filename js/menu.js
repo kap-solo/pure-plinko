@@ -2,6 +2,7 @@
  * Pure Plinko — burger menu modals.
  */
 
+import { appendGeneralDisclaimer } from '@kap-solo/suki-engine/client/rgs.js';
 import { GAME, GAME_INFO_MODES, PAYTABLE } from './config.js';
 import { formatMult } from './math.js';
 import { sessionAvgReturnPercent } from './session.js';
@@ -69,6 +70,7 @@ export function registerPlinkoModals(ctx) {
       rounding.style.marginTop = '0.5rem';
       rounding.textContent = t('roundingNote');
       info.appendChild(rounding);
+      appendGeneralDisclaimer(info, t);
       body.appendChild(info);
     },
   });
