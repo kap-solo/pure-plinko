@@ -233,6 +233,7 @@ registerPlinkoModals({
   recentResults,
   game,
   formatCurrency: (amount) => game.formatCurrency(amount),
+  formatWin: (amount) => game.formatWin(amount),
   getSession: () => session,
 });
 
@@ -277,8 +278,12 @@ betUi.bind({
   },
 });
 
-function fmt(amount) {
+function fmtBalance(amount) {
   return game.formatCurrency(amount);
+}
+
+function fmtWin(amount) {
+  return game.formatWin(amount);
 }
 
 function copyTerm(key, vars) {
@@ -310,10 +315,10 @@ function resizeCanvas() {
 }
 
 function formatSignedMoney(amount) {
-  const abs = fmt(Math.abs(amount));
+  const abs = fmtWin(Math.abs(amount));
   if (amount > 0) return `+${abs}`;
   if (amount < 0) return `-${abs}`;
-  return fmt(0);
+  return fmtWin(0);
 }
 
 function syncSessionHud() {
@@ -328,7 +333,7 @@ function syncSessionHud() {
   sessionPlEl.classList.toggle('negative', session.netProfit < 0);
   sessionBestEl.textContent =
     session.highestWin > 0
-      ? `${formatMult(session.highestMultiplier)} (${fmt(session.highestWin)})`
+      ? `${formatMult(session.highestMultiplier)} (${fmtWin(session.highestWin)})`
       : '—';
   sessionAvgReturnEl.textContent = `${sessionAvgReturnPercent(session).toFixed(2)}%`;
 }
@@ -348,8 +353,8 @@ function setReplayModeUi() {
 }
 
 function syncHud() {
-  balanceEl.textContent = replayMode ? '—' : fmt(balance);
-  betEl.textContent = fmt(bet);
+  balanceEl.textContent = replayMode ? '—' : fmtBalance(balance);
+  betEl.textContent = fmtBalance(bet);
   const risePx = bounceRisePx(layout, TIMING.bouncePop).toFixed(0);
   const rtpPart = controls.showRtp ? ` · RTP ${GAME.targetRtpPercent}%` : '';
   statsEl.textContent = `${GAME.rows} rows · max ${formatMult(GAME.maxWinMult)} · bounce ${risePx}px${rtpPart}`;
@@ -357,11 +362,11 @@ function syncHud() {
 }
 
 function displayRoundResult({ bucket, multiplier, payout, profit }) {
-  resultEl.textContent = `${formatMult(multiplier)} → ${fmt(payout)}`;
+  resultEl.textContent = `${formatMult(multiplier)} → ${fmtWin(payout)}`;
   if (multiplier >= 1000) {
-    setMessage(`Jackpot bucket #${bucket} — ${formatMult(multiplier)} ${copyTerm('onAmount')} ${fmt(bet)}.`);
+    setMessage(`Jackpot bucket #${bucket} — ${formatMult(multiplier)} ${copyTerm('onAmount')} ${fmtBalance(bet)}.`);
   } else if (profit > 0) {
-    setMessage(`Bucket #${bucket} — ${copyTerm('won')} ${fmt(profit)}.`);
+    setMessage(`Bucket #${bucket} — ${copyTerm('won')} ${fmtWin(profit)}.`);
   } else if (payout === bet) {
     setMessage(`Bucket #${bucket} — ${copyTerm('stakeReturned')}.`);
   } else {
@@ -543,7 +548,7 @@ async function onNewSession() {
       lastEvent: data.meta?.lastEvent,
     });
     if (authOutcome.status === 'ready') {
-      setMessage(`${copyTerm('newSessionBalance')} ${fmt(balance)}.`);
+      setMessage(`${copyTerm('newSessionBalance')} ${fmtBalance(balance)}.`);
     }
   } catch (err) {
     console.error(err);
@@ -580,7 +585,7 @@ async function playReplayAnimation(round, { showIntro = true } = {}) {
         formatReplayStartSummary(
           game.copy,
           { playAmount: bet, payoutMultiplier: multiplier, finalAmount: payout },
-          { formatCurrency: fmt, formatMult },
+          { formatBalance: fmtBalance, formatWin: fmtWin, formatMult },
         ),
       );
       await sleep(1200);

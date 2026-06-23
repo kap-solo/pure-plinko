@@ -13,10 +13,11 @@ import { sessionAvgReturnPercent } from './session.js';
  * @param {ReturnType<import('@kap-solo/suki-engine/client/rgs.js').createRecentResultsStore>} ctx.recentResults
  * @param {object} ctx.game
  * @param {() => string} ctx.formatCurrency
+ * @param {() => string} ctx.formatWin
  * @param {() => object | null} ctx.getSession
  */
 export function registerPlinkoModals(ctx) {
-  const { modalHost, recentResults, game, formatCurrency, getSession } = ctx;
+  const { modalHost, recentResults, game, formatCurrency, formatWin, getSession } = ctx;
 
   function t(key, vars) {
     return game?.t?.(key, vars) ?? game?.copy?.term?.(key) ?? key;
@@ -63,7 +64,7 @@ export function registerPlinkoModals(ctx) {
       for (const mode of GAME_INFO_MODES) {
         const line = document.createElement('p');
         line.style.margin = '0.25rem 0';
-        line.textContent = `${mode.label}: ${t('maxWinLabel')} ${formatMult(mode.maxWinMult)} · ${t('rtpLabel')} ${mode.rtpPercent}%`;
+        line.textContent = `${mode.key === 'base' ? t('modeInfoBase') : mode.label}: ${t('maxWinLabel')} ${formatMult(mode.maxWinMult)} · ${t('rtpLabel')} ${mode.rtpPercent}%`;
         info.appendChild(line);
       }
       const rounding = document.createElement('p');
@@ -90,11 +91,11 @@ export function registerPlinkoModals(ctx) {
       ul.style.paddingLeft = '1.1rem';
       const rows = [
         [t('statsPlays'), String(session.plays)],
-        [t('sessionPl'), formatCurrency(session.netProfit)],
+        [t('sessionPl'), formatWin(session.netProfit)],
         [
           t('statsBestWin'),
           session.highestWin > 0
-            ? `${formatMult(session.highestMultiplier)} (${formatCurrency(session.highestWin)})`
+            ? `${formatMult(session.highestMultiplier)} (${formatWin(session.highestWin)})`
             : '—',
         ],
         [t('statsAvgReturn'), `${sessionAvgReturnPercent(session).toFixed(2)}%`],
@@ -116,7 +117,7 @@ export function registerPlinkoModals(ctx) {
         (entry) => {
           const d = entry.data ?? entry;
           const mult = d.multiplier != null ? formatMult(d.multiplier) : '—';
-          const payout = d.payout != null ? formatCurrency(d.payout) : '—';
+          const payout = d.payout != null ? formatWin(d.payout) : '—';
           const bucket = d.bucket != null ? `#${d.bucket}` : '—';
           return `${bucket} · ${mult} → ${payout}`;
         },
